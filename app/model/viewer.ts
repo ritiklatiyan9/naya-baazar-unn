@@ -601,21 +601,24 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
     c.fillStyle = "black";
     polygon(wing.points);
     c.fillStyle = "white";
-    for (const bay of retailBays(wing, units)) {
+    for (const arcade of retailBays(wing, units, floor)) {
+      const bay = arcade.shop ?? arcade;
       const half = bay.width / 2;
       const doorway = shopEntrance(bay.width);
-      function band(left: number, right: number, from: number, to: number) {
+      function band(left: number, right: number, from: number, to: number, frontage = bay) {
         const front: T.Vector2[] = [], back: T.Vector2[] = [];
         const subdivisions = Math.ceil((right - left) / 0.7);
         for (let i = 0; i <= subdivisions; i++) {
           const x = T.MathUtils.lerp(left, right, i / subdivisions);
-          front.push(bay.at(x, from));
-          back.push(bay.at(x, to));
+          front.push(frontage.at(x, from));
+          back.push(frontage.at(x, to));
         }
         polygon(front.concat(back.reverse()));
       }
       // A small overlap joins neighbouring bays even on tight rail curves.
-      band(-half - 0.06, half + 0.06, floor === "first" ? 0.25 : -0.26, glass - 0.20);
+      const laneEnd = arcade.shop ? glass - .34 : glass - .20;
+      band(-arcade.width / 2 - 0.06, arcade.width / 2 + 0.06, floor === "first" ? 0.25 : -0.26, laneEnd, arcade);
+      if (arcade.shop) band(-half, half, glass - .34, glass - .20);
       band(doorway.center - doorway.halfWidth + 0.13, doorway.center + doorway.halfWidth - 0.13,
         glass - 0.36, glass + 0.46);
       band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42);

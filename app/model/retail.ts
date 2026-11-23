@@ -2,7 +2,8 @@ import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Floor, Unit } from "./geometry";
 import { cafeShopIds } from "./marketPlaces";
-import { glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
+import { displayCount, displayDepth, shelfWidth, glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
+import { facadeFinish } from "./siteMaterials";
 import { shellBoundaries, wingBoundaries } from "./wings";
 
 const themes = [
@@ -157,7 +158,7 @@ const cloth = ["#c6a66a","#778a85","#eee0bf","#885848","#566579","#c49588"];
 const spines = ["#ae6548","#e3c68e","#566b70","#7d8a66","#b89175","#6f544b","#aab7ab"];
 
 function merchandise(place: Arrangement, theme:number, span:number, variation:number) {
-  const w = Math.min(2.02, span*.78);
+  const w = shelfWidth(span);
   const rack = "#6e5843", brass = "#b19a70";
   switch (theme) {
     case 0: { // Apparel rail with silhouetted sleeves, necklines and shoes on the plinth.
@@ -346,7 +347,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
   const setback = glassSetback[floor], base = shopFloorHeight[floor];
   const ceiling = floor === "ground" ? 2.91 : 2.86;
   const glass = new Faces(), interior = new Faces(), signs = new Faces(), photos = new Faces();
-  const doors:Door[]=[];
+  const returns = new Faces(), doors:Door[]=[];
   const fittings = new Fixtures();
   const darkMetal="#3f4948";
   function beam(a:Vec,b:Vec,y:number,width:number,height:number,color:string) {
@@ -379,11 +380,12 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       }
     }
   }
-  const bays = wingBoundaries.flatMap(wing => retailBays(wing,units));
-  for(const bay of bays) {
-    let themeIndex = (bay.id * 3 + Math.floor(bay.id / 7)) % themes.length;
-    if (floor === "ground" && bay.id === cafeShopIds.coffee) themeIndex = 3;
-    if (floor === "ground" && bay.id === cafeShopIds.bakery) themeIndex = 6;
+  const bays = wingBoundaries.flatMap(wing => retailBays(wing,units,floor));
+  for(const arcade of bays) {
+    const bay = arcade.shop ?? arcade, id = arcade.id;
+    let themeIndex = (id * 3 + Math.floor(id / 7)) % themes.length;
+    if (floor === "ground" && id === cafeShopIds.coffee) themeIndex = 3;
+    if (floor === "ground" && id === cafeShopIds.bakery) themeIndex = 6;
     const theme=themes[themeIndex], half=bay.width/2;
     const point=(u:number,y:number,d:number)=>{
       const p=bay.at(u,d);
@@ -393,7 +395,23 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       fittings.put("box",c,a.clone().lerp(b,.5),w,Math.abs(b.y-a.y),w);
     };
     // The lit floor and continuous rear wall give a view right into each shop from the gallery.
-    const aisleDepth=2.37;
+    const aisleDepth=displayDepth;
+    if (arcade.shop) {
+      // The rest of the curved arcade is a plain return either side of the measured window.
+      for (const side of [-1, 1]) {
+        const start = arcade.shop.offset + side * half, end = side * arcade.width / 2;
+        const count = Math.max(1, Math.ceil(Math.abs(end-start) / .55));
+        let from = bay.at(side * half, setback);
+        for (let n=0; n<=count; n++) {
+          const to = arcade.at(T.MathUtils.lerp(start,end,n/count),setback);
+          if (from.distanceToSquared(to) > 1e-8) {
+            returns.quad(new T.Vector3(from.x,base,from.y),new T.Vector3(to.x,base,to.y),
+              new T.Vector3(to.x,base+ceiling,to.y),new T.Vector3(from.x,base+ceiling,from.y),facadeFinish.plaster);
+          }
+          from = to;
+        }
+      }
+    }
     const parts=Math.max(2,Math.ceil(bay.width/.92));
     for(let i=0;i<parts;i++) {
       const u=-half+bay.width*i/parts, v=-half+bay.width*(i+1)/parts;
@@ -429,9 +447,9 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     beam(left,right,doorH+.035,.085,.07,darkMetal);
     const inward=point(doorCenter,0,setback+.2).sub(point(doorCenter,0,setback)).setY(0).normalize();
     const opening=right.clone().sub(left);
-    const angle=bay.id%4===1?.53:bay.id%6===0?.22:0;
+    const angle=id%4===1?.53:id%6===0?.22:0;
     const turnSign=Math.sign(opening.z*inward.x-opening.x*inward.z) || 1;
-    doors.push({id:bay.id,hinge:left,center:left.clone().lerp(right,.5).add(new T.Vector3(0,1.28,0)),width:opening.length(),
+    doors.push({id,hinge:left,center:left.clone().lerp(right,.5).add(new T.Vector3(0,1.28,0)),width:opening.length(),
       yaw:-Math.atan2(opening.z,opening.x),inwardTurn:turnSign,resting:angle,angle});
     const boardWidth=Math.min(3.0,bay.width*.86);
     const signHeight=Math.min(.47,.21*boardWidth);
@@ -447,7 +465,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     for (const vertex of [a,b,ca,cb]) vertex.addScaledVector(inward,-.055);
     signs.quad(a,b,cb,ca,"#ffffff","#ffffff",tileUv(themeIndex,1,themes.length,reverse));
 
-    const stalls=Math.max(1,Math.ceil(bay.width/3));
+    const stalls=displayCount(bay.width);
     for(let i=0;i<stalls;i++) {
       const span=bay.width/stalls;
       const u=-half+span*(i+.5);
@@ -462,7 +480,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       const pl=point(u-photoWidth/2,y0,d),pr=point(u+photoWidth/2,y0,d);
       const mirror=pr.clone().sub(pl).dot(rightOnScreen)<0;
       photos.quad(pl,pr,point(u+photoWidth/2,y1,d),point(u-photoWidth/2,y1,d),"#fff","#fff",tileUv(themeIndex,4,2,mirror));
-      merchandise(arrange,themeIndex,span,bay.id+i);
+      merchandise(arrange,themeIndex,span,id+i);
       // Concealed warm light under the display header and the ceiling fixture read even in the covered arcade.
       arrange("box","#655749",0,ceiling-.055,.77,Math.min(1.25,span*.65),.085,.105);
       arrange("lamp","#ffe1a5",0,ceiling-.104,.77,Math.min(1.22,span*.62),.019,.075);
@@ -475,6 +493,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
   }
   const roomMaterial=new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.85,emissive:"#b09474",emissiveIntensity:.075});
   interior.add(group,roomMaterial).name="Shop interiors";
+  if (returns.position.length) returns.add(group,roomMaterial).name="Arcade wall returns";
   fittings.add(group);
   const atlas=signAtlas();
   signs.add(group,new T.MeshBasicMaterial({map:atlas,color:atlas?"#fff7dd":"#514b40",side:T.DoubleSide})).name="Shop signs";

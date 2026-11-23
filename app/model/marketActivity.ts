@@ -37,7 +37,7 @@ function floorRoutes(units: Unit[], floor: Floor, serviceShop?: number) {
   const routes: Route[] = [];
   const journeys: ShoppingJourney[] = [];
   for (const [wingIndex, wing] of wingBoundaries.entries()) {
-    const bays = retailBays(wing, units);
+    const bays = retailBays(wing, units, floor);
     if (!bays.length) continue;
     // Each walker has an independent stretch of the continuous arcade, with a landing between routes.
     const total = bays.reduce((sum, b) => sum + b.width, 0);
@@ -73,9 +73,9 @@ function floorRoutes(units: Unit[], floor: Floor, serviceShop?: number) {
     const stride = 4;
     const offset = (wingIndex + (floor === "first" ? 2 : 0)) % stride;
     for (let i = offset; i < regular.length; i += stride) {
-      const bay = regular[i];
-      if (occupied.has(bay.id)) continue;
-      occupied.add(bay.id);
+      const arcade = regular[i], bay = arcade.shop ?? arcade;
+      if (occupied.has(arcade.id)) continue;
+      occupied.add(arcade.id);
       const span = Math.min(1.2, bay.width * .5 - .52);
       const depth = glassSetback[floor];
       const normal = bay.at(0, depth + 1).sub(bay.at(0, depth));

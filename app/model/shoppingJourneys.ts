@@ -32,7 +32,8 @@ export type ShoppingJourney = {
   floorY: number;
 };
 
-export function hasDisplayAisle(bay: RetailBay) {
+export function hasDisplayAisle(arcade: RetailBay) {
+  const bay = arcade.shop ?? arcade;
   if (bay.width < 2.65) return false;
   const middle = bay.at(0, 0);
   const incoming = middle.clone().sub(bay.at(-1, 0)).normalize();
@@ -40,7 +41,8 @@ export function hasDisplayAisle(bay: RetailBay) {
   return incoming.dot(outgoing) > .96;
 }
 
-function shopStop(bay: RetailBay, along: number, inset: number, lane: number): Stop {
+function shopStop(arcade: RetailBay, along: number, inset: number, lane: number): Stop {
+  const bay = arcade.shop ?? arcade;
   const { center } = shopEntrance(bay.width);
   const display = Math.min(.96, bay.width * .5 - .53);
   const door = bay.at(center, inset);
@@ -51,7 +53,7 @@ function shopStop(bay: RetailBay, along: number, inset: number, lane: number): S
     bay.at(center, inset + .76), bay.at(center, inset + .30), door,
     bay.at(center, (lane + inset) / 2), bay.at(center, lane),
   ];
-  return { bay, doorAlong: along + center, door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
+  return { bay: arcade, doorAlong: along + (arcade.shop?.offset ?? 0) + center, door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
 }
 
 // Where two façades converge at a pavilion tip, a long bay may project onto both.

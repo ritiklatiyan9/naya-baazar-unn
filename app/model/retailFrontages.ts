@@ -1,20 +1,23 @@
 import * as T from "three";
-import type { Unit } from "./geometry";
+import type { Floor, Unit } from "./geometry";
 import type { Boundary } from "./wings";
 
 export const glassSetback = { ground: 1.72, first: 1.9 };
 export const shopFloorHeight = { ground: 0.29, first: 3.82 };
+export const displayDepth = 2.37;
+export const displayCount = (width: number) => Math.ceil(width / 3);
+export const shelfWidth = (span: number) => Math.min(2.02, span * .78);
 
 export function shopEntrance(width: number) {
   return { center: width < 2.6 ? 0 : -Math.min(0.81, width * 0.16), halfWidth: Math.min(0.51, width * 0.31) };
 }
 
-export type RetailBay = {
-  id: number;
+type Frontage = {
   width: number;
   /** Along the fascia from the centre of the entrance bay; positive inset goes towards the shop. */
   at: (along: number, inset: number) => T.Vector2;
 };
+export type RetailBay = Frontage & { id: number; shop?: Frontage & { offset: number } };
 
 function contains(point: T.Vector2, ring: T.Vector2[]) {
   let result = false;
@@ -26,8 +29,102 @@ function contains(point: T.Vector2, ring: T.Vector2[]) {
   return result;
 }
 
+// Nearest side boundary across the entire depth of a front-facing rectangular room.
+// Clipping the polygon edges also accounts for re-entrant jambs in the floor drawing.
+function roomHalfWidth(ring: T.Vector2[], front: T.Vector2, tangent: T.Vector2, inward: T.Vector2, near: number, far: number) {
+  let radius = Infinity;
+  const last = ring[ring.length - 1].clone().sub(front);
+  let x0 = last.dot(tangent), z0 = last.dot(inward);
+  for (const vertex of ring) {
+    const dx = vertex.x - front.x, dy = vertex.y - front.y;
+    const x1 = dx*tangent.x + dy*tangent.y, z1 = dx*inward.x + dy*inward.y;
+    if (Math.min(z0,z1) <= far && Math.max(z0,z1) >= near) {
+      const t0 = Math.abs(z1-z0) < 1e-9 ? 0 : T.MathUtils.clamp((near-z0)/(z1-z0),0,1);
+      const t1 = Math.abs(z1-z0) < 1e-9 ? 1 : T.MathUtils.clamp((far-z0)/(z1-z0),0,1);
+      const a = T.MathUtils.lerp(x0,x1,t0), b = T.MathUtils.lerp(x0,x1,t1);
+      radius = Math.min(radius, a*b <= 0 ? 0 : Math.min(Math.abs(a),Math.abs(b)));
+    }
+    x0 = x1; z0 = z1;
+  }
+  return radius;
+}
+
+// A wraparound gallery can be much wider than its end shop. Find a straight display room
+// with its full depth inside both the surveyed unit and the shell, opening onto that gallery.
+function fitEndShop(bay: RetailBay, wing: Boundary, unit: Unit, floor: Floor) {
+  const glass = glassSetback[floor], half = bay.width / 2;
+  const samples = Math.ceil(bay.width / .22);
+  const stations = Array.from({length: samples + 1}, (_, i) => -half + i * bay.width / samples);
+  const wallsFit = stations.every(u => contains(bay.at(u, glass), wing.points) &&
+    contains(bay.at(u, glass + displayDepth + .08), wing.points));
+  const displays = displayCount(bay.width), span = bay.width / displays;
+  const displaysFit = wallsFit && Array.from({length: displays}, (_, i) => {
+    const u = -half + (i + .5)*span, centre = bay.at(u, glass+1.96);
+    const tangent = bay.at(u+.16,glass).sub(bay.at(u-.16,glass)).normalize();
+    const normal = new T.Vector2(-tangent.y,tangent.x);
+    const halfShelf = (shelfWidth(span) + .10) / 2;
+    return [-1,1].every(side => [-.40,.40].every(depth => contains(
+      centre.clone().addScaledVector(tangent,side*halfShelf).addScaledVector(normal,depth), wing.points)));
+  }).every(Boolean);
+  if (displaysFit) return;
+
+  const margin = .14, near = -.26, far = displayDepth + margin;
+  const edges = unit.outline.map((p, i) => unit.outline[(i + 1) % unit.outline.length].clone().sub(p));
+  const axis = edges.reduce((longest, edge) => edge.lengthSq() > longest.lengthSq() ? edge : longest).normalize();
+  const cross = new T.Vector2(-axis.y, axis.x);
+  const gallery = stations.map(u => bay.at(u, 0));
+  let bestScore = -Infinity;
+  for (const inward of [axis, cross, axis.clone().negate(), cross.clone().negate()]) {
+    const tangent = new T.Vector2(-inward.y, inward.x);
+    const along = unit.outline.map(p => p.dot(tangent));
+    const mid = (Math.min(...along) + Math.max(...along)) / 2;
+    const edge = Math.min(...unit.outline.map(p => p.dot(inward)));
+    // The measured door jambs step in from the external face of each unit.
+    for (const reveal of [.30, .42, .56]) {
+      const front = tangent.clone().multiplyScalar(mid).addScaledVector(inward, edge + reveal);
+      if (!contains(front, unit.outline) || !contains(front, wing.points)) continue;
+      const radius = Math.min(half,
+        roomHalfWidth(unit.outline, front, tangent, inward, near, far),
+        roomHalfWidth(wing.points, front, tangent, inward, near, far));
+      const width = 2 * (radius - margin);
+      if (width < 1.35) continue;
+      // Match the surveyed frontage to the closest part of its own arcade looking into the room.
+      for (let i = 0; i < stations.length; i++) {
+        const u = stations[i];
+        if (Math.abs(u) + width / 2 > half) continue;
+        const approach = front.clone().sub(gallery[i]);
+        const distance = approach.length();
+        if (distance < .2 || approach.dot(inward) < distance * .72) continue;
+        const direction = bay.at(u+.07,0).sub(bay.at(u-.07,0)).normalize();
+        const alignment = tangent.dot(direction);
+        if (Math.abs(alignment) < .55) continue;
+        const score = -distance + Math.abs(alignment) * .5 + Math.min(width, 3) * .15;
+        if (score <= bestScore) continue;
+        bestScore = score;
+        const across = tangent.clone().multiplyScalar(Math.sign(alignment));
+        bay.shop = { width, offset: u, at(along, depth) {
+          const lane = glass - .34, lip = glass - .18;
+          const station = T.MathUtils.clamp(u + along, -half, half);
+          if (depth <= lane) return bay.at(station, depth);
+          const p = front.clone().addScaledVector(across, along);
+          if (depth >= lip) return p.addScaledVector(inward, depth - glass);
+          return bay.at(station, lane).lerp(p.addScaledVector(inward, lip - glass), (depth - lane)/(lip - lane));
+        }};
+      }
+    }
+  }
+}
+
+const cache = new WeakMap<Unit[], Map<Boundary, Partial<Record<Floor | "gallery", RetailBay[]>>>>();
+
 /** Project the measured shop positions onto the public-facing edge of their own architectural wing. */
-export function retailBays(wing: Boundary, units: Unit[]): RetailBay[] {
+export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): RetailBay[] {
+  let wings = cache.get(units);
+  if (!wings) { wings = new Map(); cache.set(units, wings); }
+  let byFloor = wings.get(wing);
+  if (!byFloor) { byFloor = {}; wings.set(wing, byFloor); }
+  const key = floor ?? "gallery";
+  if (byFloor[key]) return byFloor[key];
   const {points, publicEdge, insets} = wing;
   const starts = [0];
   const edges = points.flatMap((p, index) => {
@@ -66,8 +163,8 @@ export function retailBays(wing: Boundary, units: Unit[]): RetailBay[] {
         min = d;
       }
     }
-    return { id: unit.id, at };
-  }).sort((a, b) => a.at - b.at || a.id - b.id);
+    return { unit, at };
+  }).sort((a, b) => a.at - b.at || a.unit.id - b.unit.id);
   if (!sorted.length) return [];
   // At a tight curve several projections can land on the same corner. Reserve a usable doorway for each.
   const minWidth = Math.min(1.48, total / sorted.length);
@@ -78,9 +175,13 @@ export function retailBays(wing: Boundary, units: Unit[]): RetailBay[] {
     divisions.push(T.MathUtils.clamp(midpoint, divisions[i - 1] + minWidth, start + total - (sorted.length - i) * minWidth));
   }
   divisions.push(start + total);
-  return sorted.map((unit, index) => {
+  const bays = sorted.map(({unit}, index) => {
     const width = divisions[index + 1] - divisions[index];
     const mid = divisions[index] + width / 2;
-    return { id: unit.id, width, at: (along, inset) => sample(mid + along, inset) };
+    const bay: RetailBay = { id: unit.id, width, at: (along, inset) => sample(mid + along, inset) };
+    if (floor) fitEndShop(bay, wing, unit, floor);
+    return bay;
   });
+  byFloor[key] = bays;
+  return bays;
 }

@@ -1,16 +1,15 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { Parts } from "./geometry";
+import { Parts, prism } from "./geometry";
+import { eastFacadeAt, entranceSign, fountainGaps, fountainPanels as panels, fountainWallEnd, fountainWallFace as face } from "./entranceLayout";
+import { facadeFinish } from "./siteMaterials";
 
-const wall = { minX: 8.92, maxX: 9.23, minZ: .18, maxZ: 21.45 };
+const wallBack = face + .31;
+const wall = { minX: face, maxX: wallBack, minZ: eastFacadeAt(wallBack) - .015, maxZ: fountainWallEnd };
 const wallTop = 2.78;
 const panelTop = 2.57, poolLevel = .374;
-const panels = [
-  { z: 4.79, width: 2.72 }, { z: 10.01, width: 2.84 },
-  { z: 15.26, width: 2.84 }, { z: 20.01, width: 2.48 },
-];
 const pools = panels.map(({ z, width }) => ({
-  minX: 7.57, maxX: 8.99, minZ: z - width / 2 - .10, maxZ: z + width / 2 + .10,
+  minX: face - 1.15, maxX: face + .04, minZ: z - width / 2 - .08, maxZ: z + width / 2 + .08,
 }));
 export const entranceFountainFootprints = [wall, ...pools];
 
@@ -21,48 +20,21 @@ function randomSequence(seed: number) {
   };
 }
 
-/** Warm, horizontally bedded stone. The repeat is seamless in both directions. */
-function sandstone() {
-  const w = 512, h = 256, tau = Math.PI * 2;
-  const pixels = new Uint8Array(w * h * 4);
-  const random = randomSequence(832);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const u = tau * x / w, v = tau * y / h;
-    const bedding = v * 7 + 1.18 * Math.sin(u + .35 * Math.sin(v)) + .32 * Math.sin(3*u - v);
-    const band = Math.sin(bedding);
-    const vein = Math.pow(.5 + .5 * Math.sin(bedding * 2 + .73 * Math.sin(u - v)), 12);
-    const grain = (random() - .5) * 7 + 2 * Math.sin(17*v + 3*Math.sin(2*u));
-    const i = (y * w + x) * 4;
-    pixels[i] = 218 + 6*band - 11*vein + grain;
-    pixels[i+1] = 192 + 9*band - 19*vein + grain;
-    pixels[i+2] = 156 + 10*band - 21*vein + grain;
-    pixels[i+3] = 255;
-  }
-  const map = new T.DataTexture(pixels, w, h);
-  map.colorSpace = T.SRGBColorSpace;
-  map.wrapS = map.wrapT = T.RepeatWrapping;
-  map.minFilter = T.LinearMipmapLinearFilter;
-  map.magFilter = T.LinearFilter;
-  map.generateMipmaps = true;
-  map.anisotropy = 4;
-  map.needsUpdate = true;
-  return map;
-}
-
+// Cut each layer on the same diagonal as the mart shell. The small lap closes the construction joint.
 function cladWall(group: T.Group) {
-  const length = wall.maxZ - wall.minZ;
-  const geom = new T.BoxGeometry(wall.maxX - wall.minX, wallTop - .055, length);
-  const position = geom.getAttribute("position"), normal = geom.getAttribute("normal"), uv = geom.getAttribute("uv");
-  for (let i = 0; i < position.count; i++) {
-    const u = Math.abs(normal.getZ(i)) > .5 ? position.getX(i) : position.getZ(i);
-    const v = Math.abs(normal.getY(i)) > .5 ? position.getX(i) : position.getY(i);
-    uv.setXY(i, u / 4.6, v / 1.07);
+  function layer(name: string, front: number, back: number, end: number, base: number, top: number, color: string) {
+    const corners = [
+      new T.Vector2(front, eastFacadeAt(front) - .015), new T.Vector2(back, eastFacadeAt(back) - .015),
+      new T.Vector2(back, end), new T.Vector2(front, end),
+    ];
+    const mesh = new T.Mesh(prism(corners, base, top - base), new T.MeshStandardMaterial({ color, roughness: .85 }));
+    mesh.name = name;
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
   }
-  const block = new T.Mesh(geom, new T.MeshStandardMaterial({ map: sandstone(), roughness: .8 }));
-  block.name = "Veined sandstone boundary wall";
-  block.position.set((wall.minX + wall.maxX)/2, (wallTop + .055)/2, (wall.minZ + wall.maxZ)/2);
-  block.castShadow = block.receiveShadow = true;
-  group.add(block);
+  layer("Market plaster boundary wall", face, wallBack, wall.maxZ, .06, wallTop, facadeFinish.plaster);
+  layer("Wall coping", face - .035, wallBack + .035, wall.maxZ + .035, wallTop, wallTop + .055, facadeFinish.edge);
+  layer("Wall plinth", face - .012, wallBack + .012, wall.maxZ + .012, .06, .22, facadeFinish.lining);
 }
 
 type Point = [number, number, number];
@@ -87,7 +59,7 @@ function ledgestone(group: T.Group) {
         const left = cursor + .003, r = right - .003;
         const bottom = y + .003, top = next - .002;
         const ridge = T.MathUtils.lerp(bottom,top,.33 + .30*random());
-        const front = 8.827 - random()*.043, back = 8.912;
+        const front = face - .093 - random()*.043, back = face - .008;
         const a: Point = [front+.014,bottom,left], b: Point = [front+.011,bottom,r];
         const c: Point = [front-.007,ridge,r], d: Point = [front,ridge-.003,left];
         const e: Point = [front+.008,top,r], f: Point = [front+.012,top-.002,left];
@@ -168,6 +140,55 @@ function frontFace(width: number, height: number, x: number, y: number, z: numbe
   return new T.PlaneGeometry(width,height).rotateY(-Math.PI/2).translate(x,y,z);
 }
 
+function addEntranceSign(group: T.Group, parts: Parts) {
+  const { width, height, z } = entranceSign;
+  const y = 1.59;
+  parts.box("#424b3c", face - .065, y, z, .13, height + .08, width + .08);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 564;
+  const c = canvas.getContext("2d")!;
+  c.fillStyle = "#476338";
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  const random = randomSequence(915);
+  const leaves = ["#536f3f", "#6d854b", "#5c783e", "#354e31", "#768a52", "#415b35"];
+  for (let i = 0; i < 24000; i++) {
+    const x = random() * 1024, y = random() * 564;
+    c.fillStyle = leaves[Math.floor(random() * leaves.length)];
+    c.fillRect(x, y, 1 + random() * 5, 2 + random() * 5);
+  }
+  // Two lines of raised white letters and a red heart on the planted sign in the reference.
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.shadowColor = "#253425";
+  c.shadowBlur = 3;
+  c.shadowOffsetY = 6;
+  c.shadowOffsetX = 2;
+  c.font = "bold 171px Arial, sans-serif";
+  c.fillStyle = "#faf9ed";
+  c.fillText("I", 233, 174);
+  c.fillText("UNN", 659, 174);
+  c.fillStyle = "#da3647";
+  c.beginPath();
+  c.moveTo(379, 239);
+  c.bezierCurveTo(363, 222, 298, 176, 301, 135);
+  c.bezierCurveTo(303, 88, 357, 81, 379, 120);
+  c.bezierCurveTo(409, 80, 461, 94, 457, 139);
+  c.bezierCurveTo(454, 178, 401, 222, 379, 239);
+  c.fill();
+  c.fillStyle = "#faf9ed";
+  c.font = "bold 159px Arial, sans-serif";
+  c.fillText("NAYA BAAZAR", 512, 391, 938);
+  const texture = new T.CanvasTexture(canvas);
+  texture.colorSpace = T.SRGBColorSpace;
+  texture.anisotropy = 8;
+  const sign = new T.Mesh(frontFace(width,height,face - .133,y,z),
+    new T.MeshStandardMaterial({ map: texture, roughness: .87 }));
+  sign.name = "I ♥ UNN NAYA BAAZAR";
+  sign.receiveShadow = true;
+  group.add(sign);
+}
+
 function pooledPlanes(group: T.Group, pieces: T.BufferGeometry[], material:T.Material, name:string) {
   const mesh = new T.Mesh(mergeGeometries(pieces)!,material);
   mesh.name = name;
@@ -178,21 +199,19 @@ function pooledPlanes(group: T.Group, pieces: T.BufferGeometry[], material:T.Mat
 
 export function addEntranceFountain(parent: T.Group) {
   const group = new T.Group();
-  group.name = "Sandstone and slate fountain wall";
+  group.name = "Market entrance fountain wall";
   parent.add(group);
   cladWall(group);
   ledgestone(group);
   const parts = new Parts(), falls:T.BufferGeometry[]=[], water:T.BufferGeometry[]=[], light:T.BufferGeometry[]=[];
-  const wallLength = wall.maxZ-wall.minZ, centerZ = (wall.minZ+wall.maxZ)/2;
-  parts.box("#c2a987",9.072,wallTop+.024,centerZ,.39,.048,wallLength+.07);
-  parts.box("#a28466",9.066,.13,centerZ,.334,.17,wallLength+.014);
+  addEntranceSign(group, parts);
   for (const [i, { z, width }] of panels.entries()) {
     const pool=pools[i], length=pool.maxZ-pool.minZ, basinDepth=pool.maxX-pool.minX;
     const midX=(pool.minX+pool.maxX)/2;
     // A recessed bed and capped rims leave a real opening at the top of each basin.
-    parts.box("#343936",8.925,(panelTop+poolLevel)/2,z,.118,panelTop-poolLevel,width+.016);
-    parts.box("#5e5a4f",8.855,panelTop+.020,z,.215,.052,width+.08);
-    parts.box("#282f30",8.796,panelTop-.040,z,.070,.049,width-.085);
+    parts.box("#343936",face + .005,(panelTop+poolLevel)/2,z,.118,panelTop-poolLevel,width+.016);
+    parts.box("#5e5a4f",face - .065,panelTop+.020,z,.215,.052,width+.08);
+    parts.box("#282f30",face - .124,panelTop-.040,z,.070,.049,width-.085);
     parts.box("#232c2e",midX,.169,z,basinDepth,.25,length);
     const coping="#505351", black="#272e30";
     for (const x of [pool.minX+.052,pool.maxX-.052]) {
@@ -207,34 +226,34 @@ export function addEntranceFountain(parent: T.Group) {
     for(let j=1;j<4;j++) {
       parts.box("#404644",pool.minX-.001,.214,pool.minZ+j*length/4,.004,.329,.004);
     }
-    const innerDepth=8.77-(pool.minX+.099);
+    const innerDepth=face - .15-(pool.minX+.099);
     water.push(new T.PlaneGeometry(length-.197,innerDepth)
       .rotateY(-Math.PI/2).rotateZ(-Math.PI/2)
-      .translate(8.77-innerDepth/2,poolLevel,z));
+      .translate(face - .15-innerDepth/2,poolLevel,z));
     const fallHeight=panelTop-.07-poolLevel;
-    falls.push(frontFace(width-.07,fallHeight,8.769,poolLevel+fallHeight/2,z));
+    falls.push(frontFace(width-.07,fallHeight,face - .151,poolLevel+fallHeight/2,z));
     for (const offset of [-.32,0,.32]) {
       const lampZ=z+offset*width;
-      parts.box("#967853",8.755,panelTop-.049,lampZ,.044,.027,.110);
-      parts.box("#f9dda3",8.739,panelTop-.060,lampZ,.043,.010,.076);
-      const downward=frontFace(.34,.44,8.766,panelTop-.269,lampZ);
+      parts.box("#967853",face - .165,panelTop-.049,lampZ,.044,.027,.110);
+      parts.box("#f9dda3",face - .181,panelTop-.060,lampZ,.043,.010,.076);
+      const downward=frontFace(.34,.44,face - .154,panelTop-.269,lampZ);
       // Use the lower half of the wash for downlights beneath the slate cap.
       const uv=downward.getAttribute("uv");
       for(let j=0;j<uv.count;j++)uv.setY(j,.5*uv.getY(j));
       light.push(downward);
     }
   }
-  for (const z of [2.22,7.42,12.68,17.76]) {
+  for (const z of fountainGaps) {
     const y=1.40;
-    parts.box("#806647",8.891,y,z,.067,.175,.136);
-    parts.box("#574d3e",8.843,y,z,.077,.127,.097);
-    for (const sign of [-1,1]) parts.box("#f3cb83",8.843,y+sign*.072,z,.057,.010,.079);
+    parts.box("#806647",face - .029,y,z,.067,.175,.136);
+    parts.box("#574d3e",face - .077,y,z,.077,.127,.097);
+    for (const sign of [-1,1]) parts.box("#f3cb83",face - .077,y+sign*.072,z,.057,.010,.079);
     light.push(frontFace(.56,.92,wall.minX-.002,y,z));
   }
   parts.build(group);
 
   const time={ value:0 };
-  pooledPlanes(group,water,waterMaterial(time,false),"Water and submerged mosaic in the four basins");
+  pooledPlanes(group,water,waterMaterial(time,false),"Water and submerged mosaic in the six basins");
   pooledPlanes(group,falls,waterMaterial(time,true),"Flow over the slate panels").renderOrder = 2;
   const glow = new T.ShaderMaterial({
     vertexShader:waterVertex,

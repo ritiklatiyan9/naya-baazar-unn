@@ -5,7 +5,7 @@ import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
 import { westPassageWalkway, wingBoundaries } from "./wings";
 import { cafeTableFootprints } from "./cafes";
-import { entranceLength, entrancePoint } from "./entranceLayout";
+import { entranceLength, entrancePoint, entranceSign, fountainWallFace } from "./entranceLayout";
 import { entranceFountainFootprints } from "./entranceFountain";
 import { entrancePalmTrunks } from "./entrancePalms";
 import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
@@ -261,9 +261,10 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       return onFoot() ? 60 : 32;
     }
     function walkingView(view: WalkingView) {
-      const entranceAim = T.MathUtils.lerp(3.1, 1.4, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
+      // A diagonal from the opposite kerb frames both ends of the wall, including on a phone.
+      const aimOffset = T.MathUtils.lerp(1.55, -2.75, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
       const viewpoints = {
-        entrance: { eye: entrancePoint(-1.0, entranceLength - 0.85), target: entrancePoint(entranceAim, 4.8), drop: -0.12 },
+        entrance: { eye: entrancePoint(-4.95, entranceLength - .56), target: entrancePoint(fountainWallFace, entranceSign.z + aimOffset), drop: -.12 },
         street:   { eye: sheetPoint(939, 569), target: sheetPoint(992, 603), drop: 0.31 },
         gallery:  { eye: sheetPoint(1124, 747), target: sheetPoint(1069, 713), drop: 0.65 },
         delivery: { eye: sheetPoint(833, 315), target: sheetPoint(870, 367), drop: 0.40 },

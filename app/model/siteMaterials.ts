@@ -1,5 +1,7 @@
 import * as T from "three";
 
+export const facadeFinish = { plaster: "#efe8d9", edge: "#f4eee2", lining: "#e2d9c7", coping: "#323b40" };
+
 function canvasTile(size: number) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -52,10 +54,10 @@ export function asphaltTexture() {
   const sample = noise(83);
   const grain = context.createImageData(256, 256);
   for (let i = 0; i < grain.data.length; i += 4) {
-    const value = 74 + sample() * 14 + sample() * 9;
-    grain.data[i] = value - 6;
+    const value = 51 + sample() * 16 + sample() * 9;
+    grain.data[i] = value - 1;
     grain.data[i + 1] = value;
-    grain.data[i + 2] = value + 6;
+    grain.data[i + 2] = value + 1;
     grain.data[i + 3] = 255;
   }
   context.putImageData(grain, 0, 0);

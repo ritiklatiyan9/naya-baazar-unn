@@ -1,7 +1,8 @@
 import * as T from "three";
+import { fountainGaps } from "./entranceLayout";
 
 // Coordinates in the entrance frame, with the visitor facing down the road towards -Z.
-const rightStations = [2.8, 8.05, 13.3, 18.55];
+const rightStations = [fountainGaps[0], fountainGaps[1], fountainGaps[4], fountainGaps[5]];
 export const entrancePalmTrunks = [
   ...rightStations.map(z => ({ x: 7.25, z, radius: 0.28 })),
   ...[2.52, 7.78, 13.25, 18.79].map(z => ({ x: -7.25, z, radius: 0.28 })),

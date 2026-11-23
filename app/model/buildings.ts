@@ -5,12 +5,10 @@ import { addRetail } from "./retail";
 import { addRoofSigns } from "./roofSigns";
 import { glassSetback } from "./retailFrontages";
 import { shellBoundaries, type Boundary } from "./wings";
+import { facadeFinish } from "./siteMaterials";
 
 const shades = {
-  plaster: "#efe8d9",
-  edge: "#f4eee2",
-  lining: "#e2d9c7",
-  coping: "#323b40",
+  ...facadeFinish,
   fasciaShadow: "#676560",
 };
 const available = new T.Color("#88b697");

@@ -92,7 +92,7 @@ button:focus-visible,a:focus-visible,input:focus-visible { outline: 3px solid #9
 .unit-info strong { font-weight:600; font-size:14px; }
 .unit-info small { color:#617064; font-size:12px; font-variant-numeric:tabular-nums; }
 .unit-list button>svg { color:#859388; }
-.unit-status { margin-left:auto; display:flex; }
+.unit-status { position:relative; margin-left:auto; display:flex; }
 .unit-status i,.status-pill i { width:7px; height:7px; display:block; border-radius:50%; background:#91968d; }
 .available i { background:#41875a; }
 .booked i { background:#bd5352; }

@@ -397,19 +397,12 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     // The lit floor and continuous rear wall give a view right into each shop from the gallery.
     const aisleDepth=displayDepth;
     if (arcade.shop) {
-      // The rest of the curved arcade is a plain return either side of the measured window.
-      for (const side of [-1, 1]) {
-        const start = arcade.shop.offset + side * half, end = side * arcade.width / 2;
-        const count = Math.max(1, Math.ceil(Math.abs(end-start) / .55));
-        let from = bay.at(side * half, setback);
-        for (let n=0; n<=count; n++) {
-          const to = arcade.at(T.MathUtils.lerp(start,end,n/count),setback);
-          if (from.distanceToSquared(to) > 1e-8) {
-            returns.quad(new T.Vector3(from.x,base,from.y),new T.Vector3(to.x,base,to.y),
-              new T.Vector3(to.x,base+ceiling,to.y),new T.Vector3(from.x,base+ceiling,from.y),facadeFinish.plaster);
-          }
-          from = to;
-        }
+      // Exposed ends face a covered gallery. Finish the outside of the actual partitions.
+      const end = half + .025, rear = setback + aisleDepth + .025;
+      const perimeter = [[-end, setback], [-end, rear], [end, rear], [end, setback]];
+      for (let i = 1; i < perimeter.length; i++) {
+        const [a, da] = perimeter[i-1], [b, db] = perimeter[i];
+        returns.quad(point(a,0,da), point(b,0,db), point(b,ceiling,db), point(a,ceiling,da), facadeFinish.plaster);
       }
     }
     const parts=Math.max(2,Math.ceil(bay.width/.92));

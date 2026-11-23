@@ -618,17 +618,24 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
       // A small overlap joins neighbouring bays even on tight rail curves.
       const laneEnd = arcade.shop ? glass - .34 : glass - .20;
       band(-arcade.width / 2 - 0.06, arcade.width / 2 + 0.06, floor === "first" ? 0.25 : -0.26, laneEnd, arcade);
-      if (arcade.shop) band(-half, half, glass - .34, glass - .20);
+      if (arcade.shop) band(-half, half, glass - .34, glass - .18);
       band(doorway.center - doorway.halfWidth + 0.13, doorway.center + doorway.halfWidth - 0.13,
         glass - 0.36, glass + 0.46);
       band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42);
-      // At a sharp corner an offset aisle can fold over its neighbour. The door itself
-      // always has a straight approach perpendicular to its centre, including at these bends.
+      // Trace the approach from the arcade to the glass and then straight into the room.
+      // At a fitted corner the approach changes direction at the recessed doorway.
       const outside = bay.at(doorway.center, glass - 0.58);
       const inside = bay.at(doorway.center, glass + 1.1);
       c.beginPath();
       c.moveTo(outside.x, outside.y);
+      if (arcade.shop) {
+        for (const d of [glass - .34, glass - .18]) {
+          const p = bay.at(doorway.center, d);
+          c.lineTo(p.x,p.y);
+        }
+      }
       c.lineTo(inside.x, inside.y);
+      c.lineJoin = "round";
       c.strokeStyle = "white";
       c.lineWidth = Math.min(0.5, 2 * doorway.halfWidth - 0.20);
       c.stroke();

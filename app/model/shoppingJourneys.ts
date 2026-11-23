@@ -53,7 +53,7 @@ function shopStop(arcade: RetailBay, along: number, inset: number, lane: number)
     bay.at(center, inset + .76), bay.at(center, inset + .30), door,
     bay.at(center, (lane + inset) / 2), bay.at(center, lane),
   ];
-  return { bay: arcade, doorAlong: along + (arcade.shop?.offset ?? 0) + center, door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
+  return { bay: arcade, doorAlong: along + (arcade.shop?.galleryAt(center) ?? center), door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
 }
 
 // Where two façades converge at a pavilion tip, a long bay may project onto both.

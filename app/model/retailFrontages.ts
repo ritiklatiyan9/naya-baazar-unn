@@ -17,7 +17,7 @@ type Frontage = {
   /** Along the fascia from the centre of the entrance bay; positive inset goes towards the shop. */
   at: (along: number, inset: number) => T.Vector2;
 };
-export type RetailBay = Frontage & { id: number; shop?: Frontage & { offset: number } };
+export type RetailBay = Frontage & { id: number; shop?: Frontage & { galleryAt: (along: number) => number } };
 
 function contains(point: T.Vector2, ring: T.Vector2[]) {
   let result = false;
@@ -51,20 +51,23 @@ function roomHalfWidth(ring: T.Vector2[], front: T.Vector2, tangent: T.Vector2, 
 
 // A wraparound gallery can be much wider than its end shop. Find a straight display room
 // with its full depth inside both the surveyed unit and the shell, opening onto that gallery.
-function fitEndShop(bay: RetailBay, wing: Boundary, unit: Unit, floor: Floor) {
+function fitEndShop(bay: RetailBay, wing: Boundary, unit: Unit, floor: Floor, neighbours: Unit[] = []) {
   const glass = glassSetback[floor], half = bay.width / 2;
   const samples = Math.ceil(bay.width / .22);
   const stations = Array.from({length: samples + 1}, (_, i) => -half + i * bay.width / samples);
-  const wallsFit = stations.every(u => contains(bay.at(u, glass), wing.points) &&
-    contains(bay.at(u, glass + displayDepth + .08), wing.points));
+  const allowed = neighbours.length
+    ? (p: T.Vector2) => neighbours.every(other => !contains(p, other.outline))
+    : (p: T.Vector2) => contains(p, wing.points);
+  const wallsFit = stations.every(u => [0, displayDepth / 2, displayDepth + .08]
+    .every(depth => allowed(bay.at(u, glass + depth))));
   const displays = displayCount(bay.width), span = bay.width / displays;
   const displaysFit = wallsFit && Array.from({length: displays}, (_, i) => {
     const u = -half + (i + .5)*span, centre = bay.at(u, glass+1.96);
     const tangent = bay.at(u+.16,glass).sub(bay.at(u-.16,glass)).normalize();
     const normal = new T.Vector2(-tangent.y,tangent.x);
     const halfShelf = (shelfWidth(span) + .10) / 2;
-    return [-1,1].every(side => [-.40,.40].every(depth => contains(
-      centre.clone().addScaledVector(tangent,side*halfShelf).addScaledVector(normal,depth), wing.points)));
+    return [-1,1].every(side => [-.40,.40].every(depth => allowed(
+      centre.clone().addScaledVector(tangent,side*halfShelf).addScaledVector(normal,depth))));
   }).every(Boolean);
   if (displaysFit) return;
 
@@ -83,28 +86,31 @@ function fitEndShop(bay: RetailBay, wing: Boundary, unit: Unit, floor: Floor) {
     for (const reveal of [.30, .42, .56]) {
       const front = tangent.clone().multiplyScalar(mid).addScaledVector(inward, edge + reveal);
       if (!contains(front, unit.outline) || !contains(front, wing.points)) continue;
-      const radius = Math.min(half,
+      const radius = Math.min(
         roomHalfWidth(unit.outline, front, tangent, inward, near, far),
         roomHalfWidth(wing.points, front, tangent, inward, near, far));
-      const width = 2 * (radius - margin);
+      const width = Math.min(bay.width, 2 * (radius - margin));
       if (width < 1.35) continue;
       // Match the surveyed frontage to the closest part of its own arcade looking into the room.
       for (let i = 0; i < stations.length; i++) {
         const u = stations[i];
-        if (Math.abs(u) + width / 2 > half) continue;
+        const mouthWidth = Math.min(width, 2 * (half - Math.abs(u)));
+        if (mouthWidth < 1.15) continue;
         const approach = front.clone().sub(gallery[i]);
         const distance = approach.length();
-        if (distance < .2 || approach.dot(inward) < distance * .72) continue;
+        if (distance < .2 || approach.dot(inward) < distance * .55) continue;
         const direction = bay.at(u+.07,0).sub(bay.at(u-.07,0)).normalize();
         const alignment = tangent.dot(direction);
         if (Math.abs(alignment) < .55) continue;
-        const score = -distance + Math.abs(alignment) * .5 + Math.min(width, 3) * .15;
+        const scale = mouthWidth / width;
+        const score = -distance + Math.abs(alignment) * .5 + Math.min(width, 3) * .15 + 2 * scale;
         if (score <= bestScore) continue;
         bestScore = score;
         const across = tangent.clone().multiplyScalar(Math.sign(alignment));
-        bay.shop = { width, offset: u, at(along, depth) {
+        const galleryAt = (along: number) => u + along * scale;
+        bay.shop = { width, galleryAt, at(along, depth) {
           const lane = glass - .34, lip = glass - .18;
-          const station = T.MathUtils.clamp(u + along, -half, half);
+          const station = galleryAt(along);
           if (depth <= lane) return bay.at(station, depth);
           const p = front.clone().addScaledVector(across, along);
           if (depth >= lip) return p.addScaledVector(inward, depth - glass);
@@ -182,6 +188,21 @@ export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): Retail
     if (floor) fitEndShop(bay, wing, unit, floor);
     return bay;
   });
+  if (floor) {
+    // A shop on the next side of the bend can share the same projected display space.
+    // Fit those neighbours too, until each repaired room has clear party walls.
+    let protectedUnits = sorted.filter((_, i) => bays[i].shop).map(entry => entry.unit);
+    while (protectedUnits.length) {
+      const next: Unit[] = [];
+      bays.forEach((bay, i) => {
+        if (bay.shop) return;
+        const unit = sorted[i].unit;
+        fitEndShop(bay, wing, unit, floor, protectedUnits);
+        if (bay.shop) next.push(unit);
+      });
+      protectedUnits = next;
+    }
+  }
   byFloor[key] = bays;
   return bays;
 }

@@ -31,6 +31,7 @@ const symbols = {
   previous: '<path d="m14.5 5.5-6.5 6.5 6.5 6.5"/>',
   next: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
   expand: '<path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.2"/><path d="m4 17 5-5 4 4 3-3 5 5"/>',
   film: '<rect x="2.7" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>'
@@ -46,12 +47,12 @@ function openPhotograph(container, start, trigger) {
   dialog.innerHTML = `
     <div class="nb-lightbox-content">
       <div class="nb-lightbox-top">
-        <span>Naya Baazar <span class="nb-lightbox-divider">/</span> Architectural renders</span>
+        <span data-count></span>
         <button type="button" data-close aria-label="Close viewer" autofocus>${icon('close')}</button>
       </div>
       <div class="nb-lightbox-frame"><img alt=""></div>
       <div class="nb-lightbox-controls">
-        <div aria-live="polite" aria-atomic="true"><span data-count></span><strong data-title></strong></div>
+        <strong data-title aria-live="polite" aria-atomic="true"></strong>
         <div class="nb-lightbox-paging">
           <button type="button" data-previous aria-label="Previous render">${icon('previous')}</button>
           <button type="button" data-next aria-label="Next render">${icon('next')}</button>
@@ -65,12 +66,28 @@ function openPhotograph(container, start, trigger) {
     const [id, title, description] = photographs[index];
     photo.src = renderPath(id);
     photo.alt = description;
-    dialog.querySelector('[data-count]').textContent = (index + 1) + ' / ' + photographs.length;
+    dialog.querySelector('[data-count]').textContent = 'Photo ' + (index + 1) + ' of ' + photographs.length;
     dialog.querySelector('[data-title]').textContent = title;
   }
   dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
   dialog.querySelector('[data-previous]').addEventListener('click', () => display(index - 1));
   dialog.querySelector('[data-next]').addEventListener('click', () => display(index + 1));
+  const frame = dialog.querySelector('.nb-lightbox-frame');
+  let swipe = null;
+  frame.addEventListener('touchstart', (event) => {
+    swipe = event.touches.length === 1 ? event.touches[0] : null;
+  }, {passive: true});
+  frame.addEventListener('touchcancel', () => { swipe = null; }, {passive: true});
+  frame.addEventListener('touchend', (event) => {
+    const end = event.changedTouches[0];
+    if (swipe && end.identifier === swipe.identifier && (window.visualViewport?.scale ?? 1) <= 1) {
+      const dx = end.clientX - swipe.clientX;
+      if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(end.clientY - swipe.clientY)) {
+        display(index + (dx < 0 ? 1 : -1));
+      }
+    }
+    swipe = null;
+  }, {passive: true});
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
   });
@@ -97,7 +114,7 @@ function player() {
 }
 
 function photoGrid(container, panel) {
-  panel.innerHTML = '<div class="nb-photo-grid">' + photographs.map(([id, title], index) =>
+  panel.innerHTML = '<div class="nb-photo-grid" id="nb-gallery-photos">' + photographs.map(([id, title], index) =>
     `<button type="button" class="nb-photo-card" data-index="${index}" aria-label="Enlarge ${title.toLowerCase()}">
       <span class="nb-photo-frame">
         <img src="${renderPath(id, true)}" loading="${index < 2 ? 'eager' : 'lazy'}" alt="" width="640" height="400">
@@ -105,8 +122,16 @@ function photoGrid(container, panel) {
       </span>
       <span class="nb-photo-title">${title}</span>
     </button>`
-  ).join('') + '</div>';
-  panel.querySelector('.nb-photo-grid').addEventListener('click', (event) => {
+  ).join('') + '</div><button type="button" class="nb-more-photos" aria-controls="nb-gallery-photos" aria-expanded="false">Show all ' + photographs.length + ' photos</button>';
+  const grid = panel.querySelector('.nb-photo-grid');
+  const more = panel.querySelector('.nb-more-photos');
+  more.addEventListener('click', () => {
+    grid.classList.add('nb-show-all');
+    more.setAttribute('aria-expanded', 'true');
+    grid.children[5].focus();
+    more.hidden = true;
+  });
+  grid.addEventListener('click', (event) => {
     const card = event.target.closest('[data-index]');
     if (card) openPhotograph(container, Number(card.dataset.index), card);
   });
@@ -115,11 +140,10 @@ function photoGrid(container, panel) {
 export function mountGallery(container) {
   container.innerHTML = `<section class="nb-media-section" aria-label="Project gallery">
     <header class="nb-media-heading">
-      <div><p class="nb-media-eyebrow">Naya Baazar</p><h1>Photos &amp; videos</h1></div>
-      <p>Explore the market through its architectural renders.</p>
+      <h1>Photos &amp; videos</h1>
     </header>
     <div class="nb-gallery-filters" role="group" aria-label="Media type">
-      <button type="button" data-kind="photos" aria-pressed="true">${icon('image')} Photos <span>16</span></button>
+      <button type="button" data-kind="photos" aria-pressed="true">${icon('image')} Photos <span>${photographs.length}</span></button>
       <button type="button" data-kind="videos" aria-pressed="false">${icon('film')} Videos <span>1</span></button>
     </div>
     <div class="nb-gallery-panel"></div>
@@ -132,7 +156,7 @@ export function mountGallery(container) {
     if (button.dataset.kind === 'photos') {
       photoGrid(container, panel);
     } else {
-      panel.innerHTML = `<figure class="nb-gallery-film">${player()}<figcaption><strong>Market walkthrough</strong><span>Architectural render film · 33 seconds</span></figcaption></figure>`;
+      panel.innerHTML = `<figure class="nb-gallery-film">${player()}<figcaption><strong>Market walkthrough</strong><span>33 seconds</span></figcaption></figure>`;
     }
   }));
   photoGrid(container, panel);
@@ -141,16 +165,15 @@ export function mountGallery(container) {
 export function mountWalkthrough(container) {
   container.innerHTML = `<section class="nb-media-section" aria-label="Project walkthrough">
     <header class="nb-media-heading">
-      <div><p class="nb-media-eyebrow">Naya Baazar</p><h1>Market walkthrough</h1></div>
-      <p>A journey through the proposed market, assembled from the project’s architectural renders.</p>
+      <h1>Market walkthrough</h1>
     </header>
     <div class="nb-tour-layout">
       <div class="nb-tour-screen">
         ${player()}
         <div class="nb-tour-meta"><span>Architectural render film</span><span>33 seconds</span></div>
       </div>
-      <aside class="nb-tour-chapters" aria-label="Video chapters">
-        <h2>In this walkthrough</h2>
+      <details class="nb-tour-chapters"${window.matchMedia('(min-width: 52.01rem)').matches ? ' open' : ''}>
+        <summary><span>Chapters</span>${icon('down')}</summary>
         <div class="nb-chapters-list">${chapters.map(([time, title, description, id], i) => `
           <button type="button" data-time="${time}" aria-label="Play ${title} from ${time} seconds" ${i === 0 ? 'aria-current="true"' : ''}>
             <img src="${renderPath(id, true)}" loading="lazy" width="88" height="64" alt="">
@@ -158,7 +181,7 @@ export function mountWalkthrough(container) {
           </button>`).join('')}
         </div>
         <p class="nb-tour-description" aria-live="off">${chapters[0][2]}</p>
-      </aside>
+      </details>
     </div>
   </section>`;
   const video = container.querySelector('video');

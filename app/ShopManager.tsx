@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import plan from "../src/plan-data.json";
 import { Icon } from "./icons";
+import "./shop-manager.css";
 
 export type BookingStatus = "available" | "booked";
 export type ShopRecord = { id: number; status: BookingStatus; version: number };
@@ -89,7 +90,7 @@ export default function ShopManager({initialId, records, network, onSave, onLoca
       </header>
       <label className="manager-input">Shop number
         <span><Icon name="search" size={17}/><input type="text" inputMode="numeric" list="manager-shop-numbers" value={number}
-          autoComplete="off" ref={search} onFocus={event => event.target.select()} onChange={event => setNumber(event.target.value)}
+          autoComplete="off" enterKeyHint="done" ref={search} onFocus={event => event.target.select()} onChange={event => setNumber(event.target.value)}
           placeholder="Enter a shop number"/></span>
       </label>
       <datalist id="manager-shop-numbers">{plan.map(item => <option key={item.id} value={String(item.id)}>
@@ -103,7 +104,7 @@ export default function ShopManager({initialId, records, network, onSave, onLoca
         {record && <StatusEditor key={unit.id} record={record} online={network === "live"} save={onSave}/>}
         {network === "loading" && !record && <p role="status">Loading booking status…</p>}
         <button type="button" className="locate-shop" onClick={() => onLocate(unit.id)}><Icon name="pin" size={16}/>Show shop on layout</button>
-      </> : <p className="manager-help" role="status">{number.trim() ? "This number is missing from the project register." : "Enter a shop number to update its booking status."} Ground floor 1–108 · First floor 112–219.</p>}
+      </> : <p className="manager-help" role="status">{number.trim() && "Shop number not found. "}Ground floor 1–108 · First floor 112–219.</p>}
       {network === "error" && <div className="offline" role="status">Booking data could not refresh.<button onClick={onRefresh}>Retry</button></div>}
     </div>
   </dialog>;

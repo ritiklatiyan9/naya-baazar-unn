@@ -1,0 +1,114 @@
+@media (max-width: 640px) {
+  dialog.manager-dialog,
+  dialog.login-dialog {
+    inset: auto 0 0;
+    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 0;
+    border-radius: 18px 18px 0 0;
+    background: #fdfbf7;
+    box-shadow: 0 -10px 45px #30291e25;
+    scroll-padding-block: 16px;
+  }
+
+  .manager-dialog .manager-content,
+  .login-dialog .dialog-body {
+    padding: 18px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  }
+
+  .manager-dialog .manager-content {
+    min-height: 0;
+    gap: 20px;
+  }
+
+  .manager-dialog .manager-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .manager-dialog .manager-heading .eyebrow,
+  .manager-dialog .manager-unit .panel-icon,
+  .login-dialog .dialog-top img {
+    display: none;
+  }
+
+  .manager-dialog .manager-heading h2,
+  .login-dialog .dialog-body h2 {
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.15;
+  }
+
+  .manager-dialog .manager-heading .icon-button,
+  .login-dialog .dialog-top .icon-button {
+    position: static;
+    order: 1;
+    flex: none;
+    width: 44px;
+    height: 44px;
+  }
+
+  .manager-dialog .manager-input input,
+  .login-dialog .dialog-body input {
+    min-width: 0;
+    height: 46px;
+    font-size: 16px;
+  }
+
+  .manager-dialog .manager-unit {
+    margin: 0;
+    padding: 18px 0 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .manager-dialog .manager-unit h3 { font-size: 25px; }
+  .manager-dialog .manager-unit p { margin-top: 4px; }
+  .manager-dialog .manager-help { margin: 0; }
+  .manager-dialog .booking-form { padding: 0; border: 0; }
+  .manager-dialog .booking-form fieldset { gap: 10px; }
+
+  .manager-dialog .booking-option {
+    min-height: 46px;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 15px;
+  }
+  .manager-dialog .booking-option input { width: 18px; height: 18px; }
+  .manager-dialog .booking-option i { display: none; }
+  .manager-dialog .booking-option.available input { accent-color: #377546; }
+  .manager-dialog .booking-option.booked input { accent-color: #a24740; }
+
+  .manager-dialog .booking-save,
+  .login-dialog .primary-button {
+    min-height: 46px;
+    font-size: 16px;
+  }
+  .manager-dialog .booking-feedback:not(:empty) { margin: 12px 0 0; }
+  .manager-dialog .locate-shop { align-self: center; min-height: 44px; padding: 8px 12px; }
+  .manager-dialog .offline { margin: 0; }
+  .manager-dialog .offline button { min-height: 44px; }
+
+  .login-dialog .dialog-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+  }
+  .login-dialog .dialog-top { grid-column: 2; grid-row: 1; }
+  .login-dialog .dialog-body h2 { grid-column: 1; grid-row: 1; }
+  .login-dialog .dialog-body > p { grid-column: 1 / -1; margin-top: 8px; }
+  .login-dialog .dialog-body form { grid-column: 1 / -1; gap: 16px; margin-top: 20px; }
+  .login-dialog .dialog-body label { gap: 8px; }
+  .login-dialog .password-box input { padding-right: 48px; }
+  .login-dialog .password-box button { inset: 0 0 0 auto; width: 46px; }
+}

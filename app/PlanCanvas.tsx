@@ -242,14 +242,16 @@ function PlanView({ floor, onFloor, statuses, selected, onSelect, expanded, onEx
       </div> : <div className="pc-message" role="status">
         {failed ? <><span>Floor drawing unavailable.</span><button type="button" onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry drawing</button></> : <span>Loading floor drawing…</span>}
       </div>}
-      <p className="pc-hint">{statusCount === 0 ? "Waiting for availability" : view.zoom > 1 ? "Drag to pan" : "Select a shop to inspect"}</p>
+      <p className={statusCount ? "pc-hint pc-usage" : "pc-hint"}>{statusCount === 0 ? "Waiting for availability" : view.zoom > 1 ? "Drag to pan" : "Select a shop to inspect"}</p>
+    </div>
+    <div className="pc-footer">
+      <div className="pc-legend" aria-label="Shop availability legend"><span><i className="pc-available"/>Available</span><span><i className="pc-booked"/>Booked</span></div>
       <div className="pc-tools" role="group" aria-label="Plan zoom controls">
         <button type="button" title="Zoom out" aria-label="Zoom out" disabled={!source || view.zoom <= 1} onClick={() => zoomBy(1 / 1.6)}><Icon name="minus"/></button>
         <button type="button" title="Zoom in" aria-label="Zoom in" disabled={!source || view.zoom >= maxZoom} onClick={() => zoomBy(1.6)}><Icon name="plus"/></button>
         <button type="button" className="pc-fit" title="Fit entire plan" aria-label="Fit entire plan" disabled={!source} onClick={() => setView(fitView)}><Icon name="fit"/></button>
       </div>
     </div>
-    <div className="pc-legend" aria-label="Shop availability legend"><span><i className="pc-available"/>Available</span><span><i className="pc-booked"/>Booked</span></div>
     {expandedShop && <div className="pc-picked" aria-live="polite">
       <strong>Shop {expandedShop.id}</strong><span>{expandedShop.feet} · {expandedShop.metres} m</span>
       <span className="pc-picked-status">{statuses[expandedShop.id] ?? "Availability pending"}</span>

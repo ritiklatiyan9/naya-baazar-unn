@@ -128,9 +128,10 @@
 .pc-surface.pc-dragging, .pc-surface.pc-dragging * { cursor: grabbing !important; }
 .pc-art, .pc-art > svg { display: block; width: 100%; height: 100%; }
 
+.pc-footer { position: relative; }
 .pc-tools {
   position: absolute;
-  bottom: 12px;
+  bottom: calc(100% + 12px);
   right: 30px;
   display: flex;
   align-items: stretch;
@@ -207,26 +208,38 @@
 .pc-dialog::backdrop { background: #13271fd1; }
 .pc-dialog .pc-stage { aspect-ratio: auto; height: min(74dvh, 850px); min-height: 175px; }
 
-@media (max-width: 600px) {
-  .pc-toolbar, .pc-legend { padding-inline: .65rem; }
-  .pc-toolbar { padding-block: .55rem; }
-  .pc-card .pc-expand { width: 38px; height: 38px; }
+@media (max-width: 800px) {
+  .pc-toolbar { gap: .5rem; padding: .5rem .75rem; }
+  .pc-floors button { min-height: 44px; padding: .45rem .75rem; font-size: .875rem; }
+  .pc-card .pc-expand { width: 44px; height: 44px; }
   .pc-expand span { display: none; }
-  .pc-stage { aspect-ratio: 1.43; }
-  .pc-sheet-id { font-size: .65rem; top: 18px; left: 23px; }
-  .pc-surface { inset: .55rem .3rem 2.5rem; }
-  .pc-tools { right: 15px; bottom: 8px; }
-  .pc-tools button { width: 36px; height: 34px; }
-  .pc-cross-ne, .pc-cross-se { right: 6px; }
-  .pc-cross-nw, .pc-cross-sw { left: 6px; }
-  .pc-cross-nw, .pc-cross-ne { top: 6px; }
-  .pc-cross-se, .pc-cross-sw { bottom: 6px; }
-  .pc-hint { left: 15px; bottom: 18px; font-size: .7rem; }
-  .pc-legend { gap: .65rem; }
-  .pc-floors button { padding: .56rem .67rem; }
-  .pc-legend span { font-size: .8rem; }
-  .pc-dialog { width: 98vw; }
-  .pc-dialog .pc-stage { height: min(70dvh, 580px); }
+  .pc-stage { min-height: 0; aspect-ratio: 1.64; }
+  .pc-sheet-id, .pc-cross, .pc-usage { display: none; }
+  .pc-surface { inset: .6rem .25rem; }
+  .pc-hint { left: .75rem; bottom: .5rem; font-size: .8125rem; }
+  .pc-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .4rem .5rem;
+    padding: .5rem .75rem;
+    border-top: 1px solid var(--pc-line);
+  }
+  .pc-legend { min-height: 0; gap: .4rem .75rem; padding: 0; border: 0; }
+  .pc-legend span { font-size: .875rem; gap: .375rem; }
+  .pc-tools { position: static; margin-left: auto; box-shadow: none; }
+  .pc-tools button { width: 44px; height: 44px; }
+  .pc-tools svg { width: 17px; height: 17px; }
+  .pc-dialog { width: calc(100% - 1rem); max-height: calc(100dvh - 1rem); }
+  .pc-dialog .pc-stage { height: clamp(175px, 65dvh, 720px); }
+}
+@media (max-width: 360px) {
+  .pc-footer { padding-inline: .5rem; gap: .25rem; }
+  .pc-legend { column-gap: .5rem; }
+}
+@media (max-width: 350px) {
+  .pc-legend { flex-direction: column; align-items: flex-start; gap: .25rem; }
 }
 
 @media (max-height: 450px) and (orientation: landscape) {

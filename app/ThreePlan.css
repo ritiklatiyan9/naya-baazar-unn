@@ -283,29 +283,56 @@
 .three-plan:fullscreen .three-stage {
   flex: 1;
 }
-@media (max-width: 600px) {
-  .three-head { column-gap: .2rem; }
-  .three-head-actions { gap: 0.25rem; }
-  .three-plan .three-directory { font-size: 0.8rem; }
-  .three-viewbar { padding: .36rem .55rem; }
-  .three-viewpoints { width: 100%; display: grid; grid-template-columns: .85fr .9fr 1.1fr 1.2fr; gap: 1px; }
-  .three-viewpoints button { height: 100%; }
-  .three-viewbar button { font-size: .8rem; padding: .3rem .4rem; }
-  .three-head,
-  .three-bottom {
-    padding: 0.55rem 0.6rem;
+.three-mobile-bar { display: none; }
+@media (max-width: 800px) {
+  .three-head { padding: .5rem .75rem; gap: .5rem; flex-wrap: nowrap; }
+  .three-head-actions:not(:has(.three-expand)),
+  .three-plan .three-directory, .three-expand span, .three-viewbar, .three-desktop-help { display: none; }
+  .three-head-actions { flex: none; }
+  .three-floor-control { min-width: 0; }
+  .three-floor-control button { min-height: 44px; padding: .45rem .6rem; font-size: .875rem; }
+  .three-expand { width: 44px; height: 44px; }
+  .three-stage, .model-wide .three-stage { height: clamp(260px, 43svh, 430px); }
+  .three-plan:fullscreen { overflow-y: auto; }
+  .three-plan:fullscreen .three-stage { min-height: min(16rem, 50dvh); }
+  .three-tools { right: .75rem; bottom: .75rem; }
+  .three-tools button { width: 44px; height: 44px; }
+  .three-mobile-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .5rem .75rem;
   }
-  .three-floor-control button {
-    padding: 0.46rem 0.43rem;
-    font-size: 0.79rem;
+  .three-camera-picker {
+    position: relative;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
   }
-  .three-expand span, .three-directory span {
-    display: none;
+  .three-camera-picker svg { position: absolute; pointer-events: none; top: 50%; transform: translateY(-50%); }
+  .three-camera-picker svg:first-child { left: .55rem; }
+  .three-camera-picker svg:last-child { right: .45rem; width: 14px; }
+  .three-camera-picker select {
+    width: 100%; max-width: 100%; min-height: 44px;
+    padding: .4rem 1.65rem .4rem 2.05rem;
+    appearance: none; text-overflow: ellipsis; cursor: pointer;
+    border: 1px solid #d9d4c9; border-radius: 6px; background: #fffdf8;
+    font-family: inherit; font-size: .875rem; font-weight: 550; line-height: 1.25; color: inherit;
   }
-  .three-stage {
-    height: 345px;
+  .three-plan .three-more {
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    min-height: 44px; flex: none; padding: .4rem .55rem;
+    border: 1px solid transparent; border-radius: 6px; background: transparent; font-size: .875rem;
   }
-  .three-caption {
-    padding: 0 0.6rem 0.6rem;
-  }
+  .three-more[aria-expanded="true"] { background: #f2efe6; }
+  .three-extra:not(.is-open) { display: none; }
+  .three-bottom { gap: .5rem .75rem; justify-content: flex-start; padding: .5rem .75rem; }
+  .three-bottom .three-activity, .three-availability { min-height: 44px; }
+  .three-legend { order: 1; flex-basis: 100%; }
+  .three-caption { padding: 0 .75rem .75rem; font-size: .875rem; line-height: 1.5; }
+}
+@media (max-width: 400px) {
+  .three-floor-word { display: none; }
+  .three-floor-control button { min-width: 3.25rem; }
 }

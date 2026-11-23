@@ -14,10 +14,13 @@ type Inventory = Record<number, Availability>;
 type Unit = typeof plan[number];
 type User = { email: string };
 type View = "layout" | "model" | "details" | "walkthrough" | "gallery";
-const pages: { id: View; label: string }[] = [
-  {id:"layout", label:"Floor plans"}, {id:"details", label:"Project details"},
-  {id:"walkthrough", label:"Walkthrough"}, {id:"gallery", label:"Photos & videos"}
+const pages: { id: View; label: string; shortLabel: string; icon: string }[] = [
+  {id:"layout", label:"Floor plans", shortLabel:"Plans", icon:"plan"},
+  {id:"details", label:"Project details", shortLabel:"Project", icon:"shops"},
+  {id:"walkthrough", label:"Walkthrough", shortLabel:"Walkthrough", icon:"film"},
+  {id:"gallery", label:"Photos & videos", shortLabel:"Gallery", icon:"image"},
 ];
+const compactLayout = "(max-width: 800px)";
 const floorName = (floor: string) => floor === "ground" ? "Ground floor" : "First floor";
 const unitName = (id: number) => "Shop " + String(id).padStart(2, "0");
 const numberText = (feet: string) => feet.replaceAll("'", "′").replaceAll('"', "″");
@@ -33,14 +36,18 @@ function Brand() {
   </a>;
 }
 
-function Hero() {
+function Hero({view}: {view:View}) {
   const [index,setIndex] = useState(0);
   const current = projectViews[index];
-  return <section className="hero" aria-label="Naya Baazar project">
-    <img className="hero-photo" src={"/media/render-" + current.id + ".webp"} alt={current.label + " of the proposed market"} fetchPriority="high"/>
+  const explorer = view === "layout" || view === "model";
+  const Title = explorer ? "h1" : "p";
+  const image = "/media/render-" + current.id;
+  return <section className={"hero" + (explorer ? " hero-explorer" : "") + (view === "model" ? " hero-model" : "")} aria-label="Naya Baazar project">
+    <picture><source media="(max-width: 600px)" srcSet={image+"-small.webp"}/><img className="hero-photo" src={image+".webp"} alt={current.label + " of the proposed market"} fetchPriority="high"/></picture>
     <div className="hero-shade"/>
     <div className="hero-copy"><p className="hero-kicker"><span/>COMMERCIAL DEVELOPMENT</p>
-      <h1>Naya Baazar</h1><p className="hero-location"><Icon name="pin" size={17}/>Unn, Shamli, Uttar Pradesh</p>
+      <Title className="hero-title"><span className="desktop-title">Naya Baazar</span><span className="mobile-title">{view === "model" ? "Architectural model" : "Floor plans"}</span></Title>
+      <p className="hero-location"><Icon name="pin" size={17}/><span>Unn, Shamli<span className="state-name">, Uttar Pradesh</span></span></p>
     </div>
     <div className="hero-paging"><span>{current.label}</span><div>
       {projectViews.map((photo, i) => <button key={photo.id} className={i === index ? "active" : ""} onClick={() => setIndex(i)} aria-pressed={i === index} aria-label={"Show " + photo.label}/>)}
@@ -109,7 +116,12 @@ function Login({onClose,onUser}:{onClose:()=>void;onUser:(user:User)=>void}) {
   const [waiting,setWaiting] = useState(false);
   const [show,setShow] = useState(false);
   const [error,setError] = useState("");
-  useEffect(() => { const el = ref.current; el?.showModal(); return () => el?.close(); }, []);
+  useEffect(() => {
+    const el = ref.current;
+    el?.showModal();
+    if (window.matchMedia("(pointer: fine)").matches) el?.querySelector("input")?.focus();
+    return () => el?.close();
+  }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -125,7 +137,7 @@ function Login({onClose,onUser}:{onClose:()=>void;onUser:(user:User)=>void}) {
   return <dialog ref={ref} className="login-dialog" aria-labelledby="login-heading" onCancel={onClose} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
     <div className="dialog-body"><div className="dialog-top"><img src="/favicon.svg" width="46" height="46" alt=""/><button className="icon-button" type="button" onClick={onClose} aria-label="Close login"><Icon name="close"/></button></div>
       <h2 id="login-heading">Staff login</h2><p>Sign in to manage shop availability on both floors.</p>
-      <form onSubmit={submit}><label>Email address<input type="email" name="email" autoComplete="username" required autoFocus/></label>
+      <form onSubmit={submit}><label>Email address<input type="email" name="email" autoComplete="username" required/></label>
       <label>Password<span className="password-box"><input type={show?"text":"password"} name="password" autoComplete="current-password" required/><button type="button" onClick={()=>setShow(!show)} aria-label={show?"Hide password":"Show password"} aria-pressed={show}><Icon name="eye"/></button></span></label>
       {error && <p className="error-text" role="alert">{error}</p>}
       <button className="primary-button" disabled={waiting}>{waiting?"Signing in…":"Sign in"}</button></form>
@@ -133,10 +145,10 @@ function Login({onClose,onUser}:{onClose:()=>void;onUser:(user:User)=>void}) {
   </dialog>;
 }
 
-function ShopDetails({unit,record,admin,onBack,onManage}:{unit:Unit;record?:Availability;admin:boolean;onBack:()=>void;onManage:()=>void}) {
+function ShopDetails({unit,record,admin,onBack,onManage}:{unit:Unit;record?:Availability;admin:boolean;onBack?:()=>void;onManage:()=>void}) {
   return <div className="shop-details">
-    <button className="back-link" onClick={onBack}><Icon name="back" size={14}/> Shop directory</button>
-    <div className="shop-title"><h3>{unitName(unit.id)}</h3><span className={"status-pill "+(record?.status || "unknown")}><i/>{statusLabel(record?.status)}</span></div>
+    {onBack && <button className="back-link" onClick={onBack}><Icon name="back" size={14}/> Shop directory</button>}
+    <div className="shop-title"><h3 tabIndex={-1}>{unitName(unit.id)}</h3><span className={"status-pill "+(record?.status || "unknown")}><i/>{statusLabel(record?.status)}</span></div>
     <p className="shop-floor">{floorName(unit.floor)}</p>
     <div className="measure-heading"><Icon name="ruler" size={16}/> Internal dimensions</div>
     <dl className="measurements"><div><dt>Feet & inches</dt><dd>{numberText(unit.feet)}</dd></div><div><dt>Metres</dt><dd>{unit.metres} m</dd></div></dl>
@@ -145,13 +157,25 @@ function ShopDetails({unit,record,admin,onBack,onManage}:{unit:Unit;record?:Avai
   </div>;
 }
 
-function Directory({floor,inventory,selected,user,onSelect,onBack,onManage}:{floor:Floor;inventory:Inventory;selected:number|null;user:User|null;onSelect:(id:number)=>void;onBack:()=>void;onManage:()=>void}) {
+function Directory({floor,inventory,selected,user,onSelect,onBack,onManage,onClose}:{floor:Floor;inventory:Inventory;selected:number|null;user:User|null;onSelect:(id:number)=>void;onBack:()=>void;onManage:()=>void;onClose?:()=>void}) {
   const [query,setQuery] = useState("");
+  const panel = useRef<HTMLElement>(null);
+  const lastSelected = useRef(selected);
+  const inSheet = !!onClose;
+  useEffect(() => {
+    if (inSheet && lastSelected.current !== selected) {
+      panel.current?.querySelector<HTMLElement>(selected ? ".shop-title h3" : ".sheet-heading h2")?.focus({preventScroll:true});
+    }
+    lastSelected.current = selected;
+  },[selected,inSheet]);
   const filtered = plan.filter(u => query.trim() ? String(u.id).includes(query.trim().replace(/^0+(?=\d)/,"")) : u.floor===floor);
   const unit = plan.find(u=>u.id===selected);
-  return <aside className={"directory card" + (user?" staff":"")} aria-label={user?"Shop management":"Shop directory"}>
-    <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><p className="eyebrow">{user?"STAFF WORKSPACE":"SHOP INVENTORY"}</p><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>
-    {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} onBack={onBack} onManage={onManage}/> : <>
+  return <aside ref={panel} className={"directory card" + (user?" staff":"")} aria-label={user?"Shop management":"Shop directory"}>
+    {onClose ? <div className="sheet-heading">
+      {unit ? <button className="back-link" onClick={onBack}><Icon name="back" size={16}/>Shop directory</button> : <h2 tabIndex={-1}>Shop directory</h2>}
+      <button type="button" className="icon-button" aria-label="Close shop directory" onClick={onClose} autoFocus><Icon name="close"/></button>
+    </div> : <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><p className="eyebrow">{user?"STAFF WORKSPACE":"SHOP INVENTORY"}</p><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>}
+    {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} onBack={onClose ? undefined : onBack} onManage={onManage}/> : <>
       <label className="directory-search"><Icon name="search"/><input aria-label="Find shop by number" placeholder="Find shop by number" value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"/>{query && <button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><Icon name="close" size={15}/></button>}</label>
       <div className="directory-meta"><span>{query.trim()?"Search results":floorName(floor)}</span><span>{filtered.length} {filtered.length===1?"shop":"shops"}</span></div>
       <ul className="unit-list">{filtered.map(u=><li key={u.id}><button onClick={()=>onSelect(u.id)}><span className={"unit-icon "+(inventory[u.id]?.status || "unknown")}><Icon name="shops" size={17}/></span><span className="unit-info"><strong>{unitName(u.id)}</strong><small>{query.trim()?floorName(u.floor)+" · ":""}{numberText(u.feet)}</small></span><span className={"unit-status "+(inventory[u.id]?.status || "unknown")} title={statusLabel(inventory[u.id]?.status)}><i/><span className="sr">{statusLabel(inventory[u.id]?.status)}</span></span><Icon name="chevron" size={13}/></button></li>)}</ul>
@@ -160,13 +184,26 @@ function Directory({floor,inventory,selected,user,onSelect,onBack,onManage}:{flo
   </aside>;
 }
 
+function DirectorySheet({onClose, children}:{onClose:()=>void; children:React.ReactNode}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  return <dialog ref={ref} className="directory-sheet" aria-label="Shop directory and dimensions"
+    onCancel={onClose} onClick={e=>{if (e.target===e.currentTarget) onClose();}}>
+    {children}
+  </dialog>;
+}
+
 function ProjectDetails() {
-  return <section className="details-view"><div className="section-heading"><div><p className="eyebrow">THE DEVELOPMENT</p><h2>Project details</h2></div></div>
+  return <section className="details-view"><div className="section-heading"><div><p className="eyebrow">THE DEVELOPMENT</p><h1>Project details</h1></div></div>
     <div className="details-grid"><figure><img src="/media/render-12.webp" alt="The landscaped central plaza and two levels of shopfronts"/><figcaption>Central plaza · Architectural render</figcaption></figure>
     <article><p className="eyebrow">UNN, SHAMLI</p><h3>An open-air market around a courtyard.</h3><p>Naya Baazar brings two floors of shops together around a landscaped plaza. Covered walkways connect the shopfronts, with an internal driveway running through the market.</p>
     <dl className="project-facts"><div><dt>Developer</dt><dd>Defence Garden</dd></div><div><dt>Location</dt><dd>Unn, Shamli, Uttar Pradesh</dd></div><div><dt>Ground floor</dt><dd>108 shops · Nos. 1–108</dd></div><div><dt>First floor</dt><dd>108 shops · Nos. 112–219</dd></div></dl>
     <a href="https://defencegarden.com/" target="_blank" rel="noreferrer" className="text-link">Visit Defence Garden</a></article></div>
-    <div className="drawing-note"><Icon name="info" size={20}/><div><h3>Reading the drawings</h3><p>Shop sizes show approximate internal enclosing spans, short side first. The dimension register flags irregular shapes. The 3D model follows the drawn shop footprints and uses illustrative heights, finishes and landscaping. The source drawing also flags a boundary labelled 36.00 m that measures about 36.73 m at its stated scale.</p><a className="text-link" href="/plans/naya-baazar-sizes.pdf" download>Download the original drawings and register</a></div></div>
+    <details className="drawing-note"><summary><Icon name="ruler" size={19}/>Drawing notes and source PDF<Icon name="chevron" size={15}/></summary><div><p>Shop sizes show approximate internal enclosing spans, short side first. The dimension register flags irregular shapes. The 3D model follows the drawn shop footprints and uses illustrative heights, finishes and landscaping. The source drawing also flags a boundary labelled 36.00 m that measures about 36.73 m at its stated scale.</p><a className="text-link" href="/plans/naya-baazar-sizes.pdf" download>Download the original drawings and register</a></div></details>
   </section>;
 }
 
@@ -196,32 +233,44 @@ export default function ProjectAtlas() {
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
   const [modelDirectory,setModelDirectory] = useState(false);
+  const [compact,setCompact] = useState(false);
+  const [directorySheet,setDirectorySheet] = useState(false);
   const [managerOpen,setManagerOpen] = useState(false);
-  const [menu,setMenu] = useState(false);
   const [notice,setNotice] = useState("");
   const {inventory,network,merge,refresh,user,changeUser,sessionReady} = useData();
   const inLayout = view === "layout" || view === "model";
-  const directoryRef = useRef<HTMLDivElement>(null);
   const statuses = useMemo(()=>Object.fromEntries(Object.values(inventory).map(r=>[r.id,r.status])) as Record<number,Status>,[inventory]);
   useEffect(()=>{
     let previous: View | null = null;
     function route() {
       const next = getView();
       const switchingLayout = (next === "layout" || next === "model") && (previous === "layout" || previous === "model");
+      const changedPage = previous !== next;
       previous = next;
       setView(next);
-      setMenu(false);
-      if (!switchingLayout) window.scrollTo(0,0);
+      setDirectorySheet(false);
+      if (!switchingLayout || (changedPage && window.matchMedia(compactLayout).matches)) window.scrollTo(0,0);
     }
     route();window.addEventListener("hashchange",route);return ()=>window.removeEventListener("hashchange",route);
   },[]);
+  useEffect(() => {
+    const query = window.matchMedia(compactLayout);
+    const changed = () => { setCompact(query.matches); if (!query.matches) setDirectorySheet(false); };
+    changed();
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  },[]);
   function changeFloor(next:Floor){if(next!==floor){setFloor(next);setSelected(null);}}
-  function select(id:number) {
+  function select(id:number, inspect=true) {
     const unit = plan.find(u=>u.id===id);
-    if(unit){setFloor(unit.floor as Floor);setSelected(id);}
-    if(view==="model") setModelDirectory(true);
-    if(window.matchMedia("(max-width: 800px)").matches && !document.fullscreenElement && !document.querySelector("dialog[open]"))
-      window.requestAnimationFrame(()=>directoryRef.current?.scrollIntoView({block:"start"}));
+    if (!unit) return;
+    setFloor(unit.floor as Floor);
+    setSelected(id);
+    if (!inspect) return;
+    if (window.matchMedia(compactLayout).matches) {
+      // The expanded 2D drawing already shows the selected shop inside its dialog.
+      if (!document.querySelector("dialog[open]")) setDirectorySheet(true);
+    } else if(view==="model") setModelDirectory(true);
   }
   async function save(id:number,status:Status,version:number) {
     const response=await fetch("/api/shops/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,version})});
@@ -232,12 +281,13 @@ export default function ProjectAtlas() {
     merge([data.shop]);return {shop:data.shop,conflict:false};
   }
   function openManagement() {
-    setMenu(false);
+    setDirectorySheet(false);
     setManagerOpen(true);
   }
   function locateShop(id: number) {
     setManagerOpen(false);
-    select(id);
+    select(id, false);
+    if(view==="model" && !window.matchMedia(compactLayout).matches) setModelDirectory(true);
     if (!inLayout) window.location.hash = "layout";
     window.requestAnimationFrame(() => document.querySelector(".explorer-grid")?.scrollIntoView({block:"start"}));
   }
@@ -245,22 +295,25 @@ export default function ProjectAtlas() {
     try{const response=await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!response.ok)throw new Error();changeUser(null);setManagerOpen(false);setNotice("Signed out.");}
     catch{setNotice("Sign-out could not be confirmed. Please try again.");}
   }
+  const directoryProps = {floor, inventory, selected, user, onSelect:select, onBack:()=>setSelected(null), onManage:openManagement};
   return <>
     <a className="skip" href="#main-content" onClick={e=>{e.preventDefault();document.getElementById("main-content")?.focus();}}>Skip to content</a>
     <header className="site-header"><div className="header-inner"><Brand/>
-      <nav className={menu?"main-nav open":"main-nav"} aria-label="Project navigation">{pages.map(p=><a key={p.id} href={"#"+p.id} aria-current={view===p.id || (inLayout && p.id==="layout")?"page":undefined} onClick={()=>setMenu(false)}>{p.label}</a>)}</nav>
+      <nav className="main-nav" aria-label="Project navigation">{pages.map(p=><a key={p.id} href={"#"+p.id} aria-label={p.label} aria-current={view===p.id || (inLayout && p.id==="layout")?"page":undefined}>
+        <span className="mobile-nav-icon"><Icon name={p.icon} size={21}/></span><span className="desktop-nav-label">{p.label}</span><span className="mobile-nav-label">{p.shortLabel}</span>
+      </a>)}</nav>
       <div className="header-actions"><a className="enquiry" href="tel:+919917665577">Shop enquiries</a>
         <button type="button" className="header-manage" onClick={openManagement} aria-haspopup="dialog"><Icon name={user?"shops":"lock"} size={16}/>Manage shops</button>
       </div>
-      <button className="menu-toggle icon-button" onClick={()=>setMenu(!menu)} aria-expanded={menu} aria-label={menu?"Close navigation":"Open navigation"}><Icon name={menu?"close":"menu"}/></button></div></header>
-    <main id="main-content" tabIndex={-1} className="page-wrap"><Hero/>
+      </div></header>
+    <main id="main-content" tabIndex={-1} className="page-wrap">{(!compact || inLayout) && <Hero view={view}/>}
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
       {inLayout && <section className="layout-view"><div className="section-heading explorer-heading">
         <div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>{view==="model"?"Architectural model":"Floor plan explorer"}</h2><p className="intro">{view==="model"?"Explore the courtyard and shopfronts, or select a shop for its dimensions.":"Select a shop to explore its dimensions and availability."}</p></div>
         <div className="explorer-actions"><nav className="mode-switch" aria-label="Layout view">
           <a href="#layout" aria-current={view==="layout"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
           <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>
-        </nav><a className="outline-button download" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/>Download plan</a></div>
+        </nav><a className="outline-button download" aria-label="Download floor plan PDF" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/><span className="download-full">Download plan</span><span className="download-short">PDF</span></a></div>
       </div>
         {network==="error" && <div className="offline" role="status"><Icon name="info"/><span>{Object.keys(inventory).length?"Availability could not refresh. Showing the last received update.":"Shop availability is temporarily unavailable. You can still explore the plans and dimensions."}</span><button onClick={()=>void refresh()}>Retry</button></div>}
         <div className={"explorer-grid" + (view==="model" && !modelDirectory?" model-wide":"")}>
@@ -269,8 +322,16 @@ export default function ProjectAtlas() {
                 <ThreePlan directoryOpen={modelDirectory} onToggleDirectory={()=>setModelDirectory(open=>!open)} onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
               </Suspense>
             : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
-          <div id="layout-directory" className="directory-wrap" hidden={view==="model" && !modelDirectory} ref={directoryRef}><Directory floor={floor} inventory={inventory} selected={selected} user={user} onSelect={select} onBack={()=>setSelected(null)} onManage={openManagement}/></div>
+          <div id="layout-directory" className="directory-wrap" hidden={view==="model" && !modelDirectory}>
+            {!compact && (view==="layout" || modelDirectory) && <Directory {...directoryProps}/>}
+          </div>
         </div>
+        <button type="button" className="mobile-shop-search" aria-haspopup="dialog" onClick={()=>{setSelected(null);setDirectorySheet(true);}}>
+          <Icon name="search" size={20}/>Find a shop by number<Icon name="chevron" size={16}/>
+        </button>
+        {directorySheet && <DirectorySheet onClose={()=>setDirectorySheet(false)}>
+          <Directory {...directoryProps} onClose={()=>setDirectorySheet(false)}/>
+        </DirectorySheet>}
       </section>}
       {view==="details" && <ProjectDetails/>}
       {(view==="gallery" || view==="walkthrough") && <MediaView view={view}/>}

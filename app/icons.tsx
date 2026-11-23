@@ -11,6 +11,7 @@ const symbols: Record<string, ReactNode> = {
   cube: <><path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5m-9 5v10"/></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
   film: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></>,
+  image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.4"/><path d="m4 17 5-5 4 4 3-3 5 5"/></>,
   chevron: <path d="m9 5 7 7-7 7"/>,
   back: <path d="m14.5 5-7 7 7 7"/>,
   check: <path d="m4 12 5 5L20 6"/>,

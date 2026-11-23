@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { CameraView, ModelState, createViewer } from "./model/viewer";
 import type { Booking, Floor } from "./model/geometry";
 import "./ThreePlan.css";
@@ -27,7 +27,7 @@ const viewpoints: { view: CameraView; label: string }[] = [
 function linkedView(): CameraView {
   return viewpoints.find(({view}) => window.location.hash === "#model/" + view)?.view ?? "overview";
 }
-function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" | "directory" | "expand" }) {
+function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" | "directory" | "expand" | "camera" | "settings" | "chevron" }) {
   const paths = {
     minus: "M5 12h14",
     plus: "M5 12h14M12 5v14",
@@ -36,6 +36,9 @@ function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" |
     play: "M7 4l12 8-12 8z",
     directory: "M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1",
     expand: "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5",
+    camera: "M3 7h4l2-3h6l2 3h4v13H3z M15.5 13a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z",
+    settings: "M3 7h4m6 0h8M3 17h9m6 0h3M13 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm5 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+    chevron: "m7 10 5 5 5-5",
   };
   return (
     <svg
@@ -64,6 +67,8 @@ export default function ThreePlan(props: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
   const [availability, setAvailability] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsId = useId();
   const [cameraView, setCameraView] = useState<CameraView | null>("overview");
   const [activity, setActivity] = useState(false);
   const latest = useRef({ onSelect, availability, activity });
@@ -160,6 +165,7 @@ export default function ThreePlan(props: Props) {
     chooseView(view);
     window.history.replaceState(window.history.state, "", view === "overview" ? "#model" : "#model/" + view);
   }
+  const walking = cameraView === "street" || cameraView === "gallery";
   return (
     <section className="three-plan" ref={panel} aria-label="Interactive 3D shop model">
       <div className="three-head">
@@ -167,6 +173,7 @@ export default function ThreePlan(props: Props) {
           {(["ground", "first"] as const).map((f) => (
             <button
               key={f}
+              aria-label={names[f]}
               aria-pressed={floor === f && !effectiveEntire}
               onClick={() => {
                 if (f === "ground" && cameraView === "gallery") openView("street");
@@ -174,17 +181,18 @@ export default function ThreePlan(props: Props) {
                 setEntire(false);
               }}
             >
-              {names[f]}
+              {f === "ground" ? "Ground" : "First"}<span className="three-floor-word"> floor</span>
             </button>
           ))}
           <button
+            aria-label="Both floors"
             aria-pressed={effectiveEntire}
             onClick={() => {
               props.onClearSelection?.();
               setEntire(true);
             }}
           >
-            Both floors
+            Both<span className="three-floor-word"> floors</span>
           </button>
         </div>
         <div className="three-head-actions">
@@ -249,6 +257,21 @@ export default function ThreePlan(props: Props) {
             </div>
         )}
       </div>
+      {phase === "ready" && <div className="three-mobile-bar">
+        <label className="three-camera-picker">
+          <Glyph name="camera"/>
+          <select aria-label="Camera viewpoint" value={cameraView ?? ""} onChange={event => openView(event.target.value as CameraView)}>
+            <option value="" disabled hidden>Free view</option>
+            {viewpoints.map(({view, label}) => <option key={view} value={view}>{label}</option>)}
+          </select>
+          <Glyph name="chevron"/>
+        </label>
+        <button type="button" className="three-more" aria-expanded={optionsOpen} aria-controls={optionsId}
+          onClick={() => setOptionsOpen(open => !open)}>
+          <Glyph name="settings"/>Options
+        </button>
+      </div>}
+      <div id={optionsId} className={optionsOpen && phase === "ready" ? "three-extra is-open" : "three-extra"}>
       <div className="three-bottom">
         <label className="three-availability">
           <input
@@ -276,8 +299,11 @@ export default function ThreePlan(props: Props) {
         </button>}
       </div>
       <p className="three-caption">
-        {cameraView === "street" || cameraView === "gallery" ? "Drag to look around. Use W, A, S and D to walk." : "Drag to orbit."} Slide two fingers to move, pinch to zoom, or twist on a touchscreen to turn. With a mouse, Shift-drag or right-drag to move. Shop interiors and activity are illustrative.
+        {walking ? "Drag to look around." : "Drag to orbit."} Slide two fingers to move, pinch to zoom, or twist to turn.{" "}
+        <span className="three-desktop-help">{walking && "Use W, A, S and D to walk. "}With a mouse, Shift-drag or right-drag to move. </span>
+        Shop interiors and activity are illustrative.
       </p>
+      </div>
     </section>
   );
 }

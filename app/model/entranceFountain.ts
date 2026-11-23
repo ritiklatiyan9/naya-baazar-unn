@@ -1,5 +1,6 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { addFountainWater, type FountainBay, type Spillway } from "./fountainWater";
 import { Parts, prism } from "./geometry";
 import { eastFacadeAt, entranceSign, fountainGaps, fountainPanels as panels, fountainWallEnd, fountainWallFace as face } from "./entranceLayout";
 import { facadeFinish } from "./siteMaterials";
@@ -7,11 +8,14 @@ import { facadeFinish } from "./siteMaterials";
 const wallBack = face + .31;
 const wall = { minX: face, maxX: wallBack, minZ: eastFacadeAt(wallBack) - .015, maxZ: fountainWallEnd };
 const wallTop = 2.78;
-const panelTop = 2.57, poolLevel = .374;
-const pools = panels.map(({ z, width }) => ({
-  minX: face - 1.15, maxX: face + .04, minZ: z - width / 2 - .08, maxZ: z + width / 2 + .08,
+const panelTop = 2.57, poolLevel = .496, rim = .543;
+const fountains = panels.map(({ z, width }, index) => ({
+  z,
+  width,
+  staggered: index === 1 || index === 4,
+  pool: { minX: face - 1.15, maxX: face + .04, minZ: z - width / 2 - .08, maxZ: z + width / 2 + .08 },
 }));
-export const entranceFountainFootprints = [wall, ...pools];
+export const entranceFountainFootprints = [wall, ...fountains.map(({ pool }) => pool)];
 
 function randomSequence(seed: number) {
   return () => {
@@ -43,35 +47,47 @@ type Point = [number, number, number];
 function ledgestone(group: T.Group) {
   const vertices: number[] = [], colors: number[] = [];
   const random = randomSequence(417);
-  const shades = ["#4c4b47","#54534c","#5f5d54","#45494a","#646057","#514f49","#696458"].map(c => new T.Color(c));
+  const sandstone = ["#7e6250", "#8f7761", "#a18162", "#b09678", "#8e806e", "#705a4b", "#a2907a"].map(c => new T.Color(c));
   function quad(a: Point, b: Point, c: Point, d: Point, shade: T.Color, scale: number) {
     for (const p of [a,b,d,b,c,d]) {
       vertices.push(...p);
       colors.push(shade.r*scale, shade.g*scale, shade.b*scale);
     }
   }
-  for (const { z, width } of panels) {
-    for (let y = poolLevel - .035; y < panelTop - .028;) {
-      const next = Math.min(panelTop - .019, y + .048 + random()*.061);
-      const end = z + width/2;
-      for (let cursor = z - width/2; cursor < end - .012;) {
+  function courses(x: number, z: number, width: number, base: number, cap: number, yaw = 0) {
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const point = (depth: number, y: number, along: number): Point =>
+      [x + cos * depth + sin * along, y, z - sin * depth + cos * along];
+    for (let y = base; y < cap - .012;) {
+      const next = Math.min(cap, y + .048 + random() * .061);
+      const end = width / 2;
+      for (let cursor = -end; cursor < end - .012;) {
         const right = Math.min(end, cursor + .14 + random()*.39);
         const left = cursor + .003, r = right - .003;
         const bottom = y + .003, top = next - .002;
         const ridge = T.MathUtils.lerp(bottom,top,.33 + .30*random());
-        const front = face - .093 - random()*.043, back = face - .008;
-        const a: Point = [front+.014,bottom,left], b: Point = [front+.011,bottom,r];
-        const c: Point = [front-.007,ridge,r], d: Point = [front,ridge-.003,left];
-        const e: Point = [front+.008,top,r], f: Point = [front+.012,top-.002,left];
-        const shade = shades[Math.floor(random()*shades.length)];
+        const front = -.007 - random() * .034, back = .036;
+        const a = point(front + .014, bottom, left), b = point(front + .011, bottom, r);
+        const c = point(front - .007, ridge, r), d = point(front, ridge - .003, left);
+        const e = point(front + .008, top, r), f = point(front + .012, top - .002, left);
+        const shade = sandstone[Math.floor(random()*sandstone.length)];
         quad(a,b,c,d,shade,.83);
         quad(d,c,e,f,shade,1.02);
-        quad(f,e,[back,top,r],[back,top,left],shade,1.13);
-        quad(a,f,[back,top,left],[back,bottom,left],shade,.86);
-        quad(e,b,[back,bottom,r],[back,top,r],shade,.87);
+        quad(f,e,point(back,top,r),point(back,top,left),shade,1.13);
+        quad(a,f,point(back,top,left),point(back,bottom,left),shade,.86);
+        quad(e,b,point(back,bottom,r),point(back,top,r),shade,.87);
         cursor = right;
       }
       y = next;
+    }
+  }
+  for (const { z, width, pool } of fountains) {
+    courses(face - .098, z, width, poolLevel - .035, panelTop - .019);
+    const front = pool.minX + .051, back = pool.maxX - .038;
+    courses(front, z, pool.maxZ - pool.minZ - .035, .081, rim - .023);
+    for (const side of [-1, 1]) {
+      courses((front + back) / 2, side < 0 ? pool.minZ + .055 : pool.maxZ - .055,
+        back - front + .025, .081, rim - .023, side * Math.PI / 2);
     }
   }
   const geo = new T.BufferGeometry();
@@ -79,61 +95,9 @@ function ledgestone(group: T.Group) {
   geo.setAttribute("color", new T.Float32BufferAttribute(colors,3));
   geo.computeVertexNormals();
   const mesh = new T.Mesh(geo, new T.MeshStandardMaterial({vertexColors:true,roughness:.47,metalness:.10}));
-  mesh.name = "Split charcoal slate ledges";
+  mesh.name = "Split sandstone courses";
   mesh.receiveShadow = true;
   group.add(mesh);
-}
-
-const waterVertex = `
-  varying vec2 coord;
-  varying float alongWall;
-  varying vec3 toEye;
-  varying vec3 faceNormal;
-  void main(){
-    coord=uv;
-    alongWall=position.z;
-    vec4 eye=modelViewMatrix*vec4(position,1.);
-    toEye=-eye.xyz;
-    faceNormal=normalMatrix*normal;
-    gl_Position=projectionMatrix*eye;
-  }`;
-const finishColor = `
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
-  }`;
-
-function waterMaterial(time: {value:number}, falling: boolean) {
-  const fragment = falling ? `
-    float u=coord.x, v=coord.y;
-    float flow=u*138.+.59*sin(26.*v+t*3.1+u*24.+alongWall)+.25*sin(v*60.+4.*t);
-    float threads=pow(.5+.5*cos(flow),9.);
-    float runnel=pow(.5+.5*cos(u*41.+.94*sin(u*14.+alongWall*.6)+.23*sin(v*13.+t*1.8+u*18.)),6.);
-    float scud=.20+.80*pow(.5+.5*sin(v*32.+t*5.2+3.*sin(u*18.+alongWall*.73)),2.);
-    float breadth=smoothstep(.0,.05,u)*smoothstep(.0,.05,1.-u);
-    float film=.06+.07*pow(.5+.5*cos(u*23.+.45*sin(v*11.+t*2.)),2.);
-    float detail=1.-smoothstep(.8,3.,fwidth(flow));
-    float opacity=breadth*(film+(.26*runnel+.46*threads*detail)*scud);
-    gl_FragColor=vec4(vec3(.48,.62,.65),opacity);
-  ` : `
-    float u=coord.x, back=coord.y;
-    float grazing=pow(1.-abs(dot(normalize(toEye),normalize(faceNormal))),2.);
-    float swell=sin(17.*u+5.*back-t*1.6)+.38*sin(42.*u-9.*back+2.1*t);
-    float fan=length(vec2(fract(u*3.+.3+.08*sin(alongWall))-.5,(1.-back)*1.36));
-    float ripples=pow(.5+.5*cos(48.*fan-3.8*t+1.25*swell),7.);
-    float impact=exp(-7.*(1.-back));
-    float crest=(.05+.30*impact)*ripples;
-    vec2 cell=fract(vec2(u*32., back*12.));
-    float grout=step(.055,min(cell.x,cell.y));
-    vec3 deep=mix(vec3(.022,.050,.061),vec3(.033,.101,.113),grout);
-    vec3 water=mix(deep,vec3(.23,.32,.34),.18+.51*grazing+.04*swell);
-    water+=crest*vec3(.37,.46,.45)+.15*impact*vec3(.36,.39,.36);
-    gl_FragColor=vec4(water,1.);
-  `;
-  return new T.ShaderMaterial({
-    vertexShader:waterVertex, uniforms:{t:time},
-    transparent:falling, depthWrite:!falling,
-    fragmentShader:"uniform float t; varying vec2 coord; varying float alongWall; varying vec3 toEye; varying vec3 faceNormal; void main(){\n"+fragment+finishColor,
-  });
 }
 
 function frontFace(width: number, height: number, x: number, y: number, z: number) {
@@ -189,59 +153,58 @@ function addEntranceSign(group: T.Group, parts: Parts) {
   group.add(sign);
 }
 
-function pooledPlanes(group: T.Group, pieces: T.BufferGeometry[], material:T.Material, name:string) {
-  const mesh = new T.Mesh(mergeGeometries(pieces)!,material);
-  mesh.name = name;
-  group.add(mesh);
-  pieces.forEach(geo=>geo.dispose());
-  return mesh;
-}
-
 export function addEntranceFountain(parent: T.Group) {
   const group = new T.Group();
   group.name = "Market entrance fountain wall";
   parent.add(group);
   cladWall(group);
   ledgestone(group);
-  const parts = new Parts(), falls:T.BufferGeometry[]=[], water:T.BufferGeometry[]=[], light:T.BufferGeometry[]=[];
+  const parts = new Parts(), light: T.BufferGeometry[] = [], water: FountainBay[] = [];
   addEntranceSign(group, parts);
-  for (const [i, { z, width }] of panels.entries()) {
-    const pool=pools[i], length=pool.maxZ-pool.minZ, basinDepth=pool.maxX-pool.minX;
+  function downlight(x: number, y: number, z: number, width: number, height: number) {
+    const wash = frontFace(width, height, x, y - height / 2, z);
+    const uv = wash.getAttribute("uv");
+    for (let j = 0; j < uv.count; j++) uv.setY(j, .5 * uv.getY(j));
+    light.push(wash);
+  }
+  for (const { z, width, staggered, pool } of fountains) {
+    const length=pool.maxZ-pool.minZ, basinDepth=pool.maxX-pool.minX;
     const midX=(pool.minX+pool.maxX)/2;
+    const stone = "#8b7762", coping = "#c9b597";
+    // Recess the core so the split faces stay exposed.
+    const linerInset = .064;
     // A recessed bed and capped rims leave a real opening at the top of each basin.
     parts.box("#343936",face + .005,(panelTop+poolLevel)/2,z,.118,panelTop-poolLevel,width+.016);
-    parts.box("#5e5a4f",face - .065,panelTop+.020,z,.215,.052,width+.08);
-    parts.box("#282f30",face - .124,panelTop-.040,z,.070,.049,width-.085);
-    parts.box("#232c2e",midX,.169,z,basinDepth,.25,length);
-    const coping="#505351", black="#272e30";
+    parts.box("#b19b80", face - .065, panelTop + .020, z, .215, .052, width + .08);
+    parts.box(stone,midX,.169,z,basinDepth-2*linerInset,.25,length-2*linerInset);
+    const wallHeight = rim - .019 - .19;
     for (const x of [pool.minX+.052,pool.maxX-.052]) {
-      parts.box(black,x,.304,z,.104,.205,length);
-      parts.box(coping,x,.423,z,.118,.038,length);
+      const linerX = x + Math.sign(midX-x)*linerInset/2;
+      parts.box(stone,linerX,.19+wallHeight/2,z,.104-linerInset,wallHeight,length-2*linerInset);
+      parts.box(coping,x,rim,z,.118,.038,length);
     }
     for (const side of [-1,1]) {
       const endZ=z+side*(length-.10)/2;
-      parts.box(black,midX,.307,endZ,basinDepth-.20,.208,.105);
-      parts.box(coping,midX,.423,endZ,basinDepth-.20,.038,.117);
+      parts.box(stone,midX,.19+wallHeight/2,endZ-side*linerInset/2,basinDepth-.20,wallHeight,.105-linerInset);
+      parts.box(coping,midX,rim,endZ,basinDepth-.20,.038,.117);
     }
-    for(let j=1;j<4;j++) {
-      parts.box("#404644",pool.minX-.001,.214,pool.minZ+j*length/4,.004,.329,.004);
+    function spout(offset: number, y: number, span: number, reach: number): Spillway {
+      const outlet = { x: face - .273, y, z: z + offset * width, width: span * width, reach };
+      const housing = face - .178;
+      parts.box("#493d32", housing, y + .003, outlet.z, .17, .12, outlet.width + .093);
+      parts.box("#9c8161", housing - .017, y + .054, outlet.z, .19, .034, outlet.width + .13);
+      parts.box("#302f2a", outlet.x + .021, y + .016, outlet.z, .044, .020, outlet.width + .023);
+      return outlet;
     }
-    const innerDepth=face - .15-(pool.minX+.099);
-    water.push(new T.PlaneGeometry(length-.197,innerDepth)
-      .rotateY(-Math.PI/2).rotateZ(-Math.PI/2)
-      .translate(face - .15-innerDepth/2,poolLevel,z));
-    const fallHeight=panelTop-.07-poolLevel;
-    falls.push(frontFace(width-.07,fallHeight,face - .151,poolLevel+fallHeight/2,z));
-    for (const offset of [-.32,0,.32]) {
-      const lampZ=z+offset*width;
-      parts.box("#967853",face - .165,panelTop-.049,lampZ,.044,.027,.110);
-      parts.box("#f9dda3",face - .181,panelTop-.060,lampZ,.043,.010,.076);
-      const downward=frontFace(.34,.44,face - .154,panelTop-.269,lampZ);
-      // Use the lower half of the wash for downlights beneath the slate cap.
-      const uv=downward.getAttribute("uv");
-      for(let j=0;j<uv.count;j++)uv.setY(j,.5*uv.getY(j));
-      light.push(downward);
-    }
+    const lipHeight = 2.11, reach = .46;
+    const sideHeight = staggered ? 1.61 : lipHeight;
+    const sideReach = staggered ? .37 : reach;
+    const centre = spout(0, lipHeight, staggered ? .272 : .24, reach);
+    downlight(face - .149, lipHeight - .025, centre.z, centre.width * 1.16, .79);
+    water.push({
+      z, level: poolLevel, width: length - .206, front: pool.minX + .105, back: face - .143,
+      spillways: [spout(-.312, sideHeight, .24, sideReach), centre, spout(.312, sideHeight, .24, sideReach)],
+    });
   }
   for (const z of fountainGaps) {
     const y=1.40;
@@ -252,20 +215,26 @@ export function addEntranceFountain(parent: T.Group) {
   }
   parts.build(group);
 
-  const time={ value:0 };
-  pooledPlanes(group,water,waterMaterial(time,false),"Water and submerged mosaic in the six basins");
-  pooledPlanes(group,falls,waterMaterial(time,true),"Flow over the slate panels").renderOrder = 2;
   const glow = new T.ShaderMaterial({
-    vertexShader:waterVertex,
+    vertexShader:`varying vec2 coord; void main(){
+      coord = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
     fragmentShader:`varying vec2 coord; void main(){
       vec2 p=coord*2.-1.;
       float along=abs(p.y);
       float radius=.072+.64*along;
       float wash=(1.-smoothstep(.3*radius,radius,abs(p.x)))*(1.-smoothstep(.05,1.,along));
       gl_FragColor=vec4(1.,.64,.24,.30*wash);
-    `+finishColor,
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
     depthWrite:false,transparent:true,blending:T.AdditiveBlending,
   });
-  pooledPlanes(group,light,glow,"Warm wall sconce washes").renderOrder=3;
-  return (seconds:number)=>{time.value=seconds;};
+  const washes = new T.Mesh(mergeGeometries(light)!, glow);
+  washes.name = "Warm wall sconce washes";
+  washes.renderOrder = 4;
+  group.add(washes);
+  light.forEach(geometry => geometry.dispose());
+  return addFountainWater(group, water);
 }

@@ -43,8 +43,9 @@ export async function readFloor(floor: Floor, signal: AbortSignal) {
   return units;
 }
 
-export function prism(points: T.Vector2[], bottom: number, height: number) {
+export function prism(points: T.Vector2[], bottom: number, height: number, holes: T.Vector2[][] = []) {
   const shape = new T.Shape(points.map((p) => new T.Vector2(p.x, -p.y)));
+  shape.holes = holes.map(ring => new T.Path(ring.map(p => new T.Vector2(p.x, -p.y))));
   const geom = new T.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, curveSegments: 2 });
   geom.rotateX(-Math.PI / 2);
   geom.translate(0, bottom, 0);

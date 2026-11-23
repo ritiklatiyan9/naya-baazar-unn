@@ -1,10 +1,13 @@
 import * as T from "three";
 import type { Floor, Unit } from "./geometry";
 import type { Boundary } from "./wings";
+import { pavilionStair, pavilionStairShops } from "./pavilionStairLayout";
 
 export const glassSetback = { ground: 1.72, first: 1.9 };
 export const shopFloorHeight = { ground: 0.29, first: 3.82 };
 export const displayDepth = 2.37;
+// Rooms run this deep wherever the building behind the glass allows; the rest keep the display depth.
+const deepRoom = 3.8;
 export const displayCount = (width: number) => Math.ceil(width / 3);
 export const shelfWidth = (span: number) => Math.min(2.02, span * .78);
 
@@ -17,7 +20,12 @@ type Frontage = {
   /** Along the fascia from the centre of the entrance bay; positive inset goes towards the shop. */
   at: (along: number, inset: number) => T.Vector2;
 };
-export type RetailBay = Frontage & { id: number; shop?: Frontage & { galleryAt: (along: number) => number } };
+export type RetailBay = Frontage & {
+  id: number;
+  /** Room depth behind the glass. Furnishings sit against the rear wall, so they move back with it. */
+  depth: number;
+  shop?: Frontage & { galleryAt: (along: number) => number };
+};
 
 function contains(point: T.Vector2, ring: T.Vector2[]) {
   let result = false;
@@ -121,6 +129,36 @@ function fitEndShop(bay: RetailBay, wing: Boundary, unit: Unit, floor: Floor, ne
   }
 }
 
+// A room can run deeper while its rear wall stays nearer its own frontage than any other public edge
+// (so rooms on opposite faces never meet), clear of the back walls and of the units holding fitted
+// end shops, and neither pinched nor fanned out by a bend in the frontage.
+function roomDepth(bay: Frontage, wing: Boundary, glass: number, fitted: Unit[]) {
+  const { points, publicEdge } = wing;
+  const stations = Math.max(2, Math.ceil(bay.width / .5)), pitch = bay.width / stations;
+  const longest = Math.max(...points.map((p, i) => p.distanceTo(points[(i + 1) % points.length])));
+  function fits(depth: number) {
+    const inset = glass + depth + .1, reach = inset + longest;
+    let previous: T.Vector2 | undefined;
+    for (let s = 0; s <= stations; s++) {
+      const p = bay.at(s * pitch - bay.width / 2, inset);
+      const chord = previous ? p.distanceTo(previous) / pitch : 1;
+      if (chord < .72 || chord > 1.4 || fitted.some(unit => contains(p, unit.outline))) return false;
+      previous = p;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        const dx = p.x - a.x, dy = p.y - a.y, ex = b.x - a.x, ey = b.y - a.y;
+        if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
+        const t = T.MathUtils.clamp((dx * ex + dy * ey) / (ex * ex + ey * ey), 0, 1);
+        if (Math.hypot(dx - t * ex, dy - t * ey) < (publicEdge[i] ? inset - .05 : .25)) return false;
+      }
+    }
+    return true;
+  }
+  let depth = displayDepth;
+  while (depth < deepRoom && fits(Math.min(depth + .25, deepRoom))) depth = Math.min(depth + .25, deepRoom);
+  return depth;
+}
+
 const cache = new WeakMap<Unit[], Map<Boundary, Partial<Record<Floor | "gallery", RetailBay[]>>>>();
 
 /** Project the measured shop positions onto the public-facing edge of their own architectural wing. */
@@ -157,11 +195,11 @@ export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): Retail
     const n = insets[edge.index].clone().lerp(insets[edge.next], t);
     return points[edge.index].clone().addScaledVector(edge.delta, t).addScaledVector(n, inset);
   }
-  const sorted = units.filter(unit => contains(unit.centre, points)).map(unit => {
+  function stationOf(point: T.Vector2) {
     let at = 0, min = Infinity;
     for (const edge of edges) {
       const a = points[edge.index];
-      const diff = unit.centre.clone().sub(a);
+      const diff = point.clone().sub(a);
       const t = T.MathUtils.clamp(diff.dot(edge.delta) / edge.delta.lengthSq(), 0, 1);
       const d = diff.addScaledVector(edge.delta, -t).lengthSq();
       if (d < min) {
@@ -169,8 +207,11 @@ export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): Retail
         min = d;
       }
     }
-    return { unit, at };
-  }).sort((a, b) => a.at - b.at || a.unit.id - b.unit.id);
+    return at;
+  }
+  const sorted = units.filter(unit => contains(unit.centre, points))
+    .map(unit => ({ unit, at: stationOf(unit.centre) }))
+    .sort((a, b) => a.at - b.at || a.unit.id - b.unit.id);
   if (!sorted.length) return [];
   // At a tight curve several projections can land on the same corner. Reserve a usable doorway for each.
   const minWidth = Math.min(1.48, total / sorted.length);
@@ -181,10 +222,17 @@ export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): Retail
     divisions.push(T.MathUtils.clamp(midpoint, divisions[i - 1] + minWidth, start + total - (sorted.length - i) * minWidth));
   }
   divisions.push(start + total);
+  const stairShops = floor ? pavilionStairShops[floor] : undefined;
   const bays = sorted.map(({unit}, index) => {
-    const width = divisions[index + 1] - divisions[index];
-    const mid = divisions[index] + width / 2;
-    const bay: RetailBay = { id: unit.id, width, at: (along, inset) => sample(mid + along, inset) };
+    let left = divisions[index], right = divisions[index + 1];
+    if (unit.id === stairShops?.[0]) {
+      right = stationOf(new T.Vector2(pavilionStair.left, pavilionStair.galleryEdge));
+    } else if (unit.id === stairShops?.[1]) {
+      left = stationOf(new T.Vector2(pavilionStair.right, pavilionStair.galleryEdge));
+    }
+    const width = right - left;
+    const mid = (left + right) / 2;
+    const bay: RetailBay = { id: unit.id, width, depth: displayDepth, at: (along, inset) => sample(mid + along, inset) };
     if (floor) fitEndShop(bay, wing, unit, floor);
     return bay;
   });
@@ -202,6 +250,8 @@ export function retailBays(wing: Boundary, units: Unit[], floor?: Floor): Retail
       });
       protectedUnits = next;
     }
+    const fitted = sorted.filter((_, i) => bays[i].shop).map(entry => entry.unit);
+    for (const bay of bays) if (!bay.shop) bay.depth = roomDepth(bay, wing, glassSetback[floor], fitted);
   }
   byFloor[key] = bays;
   return bays;

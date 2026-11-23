@@ -1,14 +1,16 @@
 import * as T from "three";
-import { clothTexture, garmentGeometry, hairGeometry, headGeometry, portraitGeometry, type Garment } from "./shopperAppearance";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { apronGeometry, clothTexture, garmentGeometry, hairGeometry, headGeometry, portraitGeometry, type Garment } from "./shopperAppearance";
 
 export type PersonPose = {
   x: number; z: number; floorY: number; heading: number;
   stride: number; walking: number; browsing: number; time: number;
+  tillHand?: number;
   carrying?: number;
   crouch?: number;
 };
 
-type Form = "oval" | "linen" | "shirt" | "tunic" | "thigh" | "shin" | "sleeve" | "forearm" | "hand" | "foot" | "head" | "face" | "hair" | "hem" | "collar" | "bag" | "ring" | "shadow" | "cup" | "silhouette";
+type Form = "apron" | "workwear" | "oval" | "linen" | "shirt" | "tunic" | "thigh" | "shin" | "sleeve" | "forearm" | "hand" | "foot" | "head" | "face" | "hair" | "hem" | "collar" | "bag" | "ring" | "shadow" | "cup" | "silhouette";
 type Part = { actor: Shopper; joint: T.Object3D; form: Form; color: string; local: T.Matrix4 };
 
 function profile(rings: [number, number][], sides = 12) {
@@ -17,15 +19,27 @@ function profile(rings: [number, number][], sides = 12) {
 
 function humanGeometry(form: Form) {
   switch (form) {
-    case "linen": case "shirt": case "tunic": return garmentGeometry(false);
+    case "workwear": case "linen": case "shirt": case "tunic": return garmentGeometry(false);
+    case "apron": return apronGeometry();
     case "hem": return garmentGeometry(true);
-    case "thigh": return profile([[0, -1.02],[.265,-1.02],[.35,-.97],[.35,-.91],[.33,-.83],[.405,-.72],[.40,-.67],[.432,-.56],[.47,-.38],[.50,-.23],[.55,-.06],[.54,.06],[.40,.14],[0,.14]],17);
+    case "thigh": return profile([[0, -1.02],[.265,-1.02],[.35,-.97],[.35,-.91],[.33,-.83],[.405,-.72],[.40,-.67],[.432,-.56],[.47,-.38],[.49,-.23],[.48,-.14],[.44,-.06],[.37,.04],[.28,.08],[0,.08]],17);
     case "shin": return profile([[0,-1.04],[.36,-1.04],[.39,-1],[.35,-.93],[.37,-.84],[.303,-.79],[.306,-.70],[.376,-.49],[.419,-.35],[.413,-.25],[.365,-.15],[.36,-.08],[.394,.015],[.29,.09],[0,.105]],16);
     case "sleeve": return profile([[0,-1],[.46,-1],[.50,-.985],[.495,-.94],[.465,-.91],[.485,-.75],[.50,-.65],[.475,-.55],[.51,-.41],[.55,-.20],[.54,-.02],[.47,.095],[.33,.15],[0,.19]],15);
     case "forearm": return profile([[0,-1],[.26,-1],[.30,-.92],[.28,-.83],[.32,-.68],[.415,-.48],[.45,-.34],[.46,-.19],[.38,-.07],[.36,.02],[.26,.07],[0,.09]]);
     case "hand": {
-      const g=profile([[0,-.133],[.28,-.131],[.62,-.115],[.78,-.089],[.94,-.064],[.97,-.035],[.80,-.007],[.66,.010],[0,.014]],12);
-      g.scale(.027,1,.043);return g;
+      const palm = profile([[0,-.092],[.64,-.090],[.91,-.080],[.99,-.047],[.86,-.019],[.66,.010],[0,.014]]);
+      palm.scale(.023, 1, .041);
+      const fingers = [.057, .073, .078, .069].map((length, i) => {
+        const digit = profile([[0,-1],[.68,-.98],[.82,-.90],[.84,-.65],[.93,-.50],[.87,-.40],[1,-.17],[.97,0],[0,.13]], 7);
+        digit.scale(.010, length, .0107);
+        digit.rotateX(.09 - .04 * i);
+        digit.translate(0, -.080 + (i === 0 ? .007 : 0), -.028 + i * .0185);
+        return digit;
+      });
+      const pieces = [palm, ...fingers];
+      const hand = mergeGeometries(pieces);
+      pieces.forEach(piece => piece.dispose());
+      return hand;
     }
     case "foot": {
       const sections = [[-.081,.018,.032],[-.069,.049,.071],[-.035,.058,.097],
@@ -37,10 +51,20 @@ function humanGeometry(form: Form) {
           pos.push(w*Math.sin(a),-.052+height*Math.pow(.5+.5*Math.cos(a),1.22),z);
           if(i+1<sections.length){
             const k=i*10+j, next=i*10+(j+1)%10;
-            index.push(k,next,next+10,k,next+10,k+10);
+            index.push(k,next+10,next,k,k+10,next+10);
           }
         }
       });
+      for (const end of [0, sections.length - 1]) {
+        const [z, , h] = sections[end];
+        const centre = pos.length / 3;
+        pos.push(0, -.052 + h / 2, z);
+        for (let j = 0; j < 10; j++) {
+          const near = end * 10 + j, next = end * 10 + (j + 1) % 10;
+          if (end === 0) index.push(centre, near, next);
+          else index.push(centre, next, near);
+        }
+      }
       const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(pos,3));
       g.setIndex(index);g.computeVertexNormals();return g;
     }
@@ -80,7 +104,8 @@ export function contactTexture() {
 
 const clothes = ["#276872", "#bc7658", "#9a4958", "#d0bd95", "#777c9f", "#627958", "#d69a57", "#718ca0", "#b2a399", "#aa7891", "#315067", "#e3d3bd"];
 const trousers = ["#444854", "#424e5b", "#635956", "#586856", "#765e51", "#39454b"];
-const skinTones = ["#af7856", "#a5684b", "#c59574", "#94644b", "#bb8462", "#d2a185"];
+// Cheek midtones from the eight portrait cells keep the wrists, ears and neck continuous with the face.
+const skinTones = ["#ca957c", "#bc8871", "#c49075", "#c38b73", "#bb836e", "#bf8874", "#c9957d", "#c79279"];
 const hairTones = ["#352a28", "#282929", "#463731", "#332e30", "#61534b"];
 
 function joint(parent: T.Object3D, x: number, y: number, z: number) {
@@ -89,6 +114,10 @@ function joint(parent: T.Object3D, x: number, y: number, z: number) {
   parent.add(result);
   return result;
 }
+
+const fullTurn = 2 * Math.PI;
+const ankleTarget = new T.Vector3(), inversePelvis = new T.Quaternion();
+const palmTarget = new T.Vector3(), inverseChest = new T.Quaternion();
 
 /** Each joint drives a handful of shared instances. All figures on a level use one batch per shape. */
 class Shopper {
@@ -104,14 +133,15 @@ class Shopper {
   visible = true;
   detailed = true;
   portraitIndex: number;
-  constructor(readonly seed: number, readonly dinerIndex: number) {
-    const shirt = clothes[(seed * 7 + 2) % clothes.length], trousersColor = trousers[(seed * 5 + 1) % trousers.length];
+  constructor(readonly seed: number, readonly dinerIndex: number, crew: boolean, cashier: boolean) {
+    const shirt = crew ? "#324450" : cashier ? ["#d6cbb5","#c6ced0","#d9cfbe"][seed % 3] : clothes[(seed * 7 + 2) % clothes.length];
+    const trousersColor = crew ? "#394650" : trousers[(seed * 5 + 1) % trousers.length];
     this.portraitIndex = (seed * 5 + Math.floor(seed / 8)) % 8;
-    const skin = skinTones[this.portraitIndex % skinTones.length];
+    const skin = skinTones[this.portraitIndex];
     const hair = this.portraitIndex===2 || this.portraitIndex===5 ? "#68625b" : hairTones[(seed * 3) % hairTones.length];
-    const shoes = ["#37312c", "#ddd0b5", "#4a3a33", "#ebe6d9"][(seed * 3) % 4];
-    const tunic = seed % 3 === 0 && dinerIndex < 0, longHair = this.portraitIndex % 2 === 0;
-    const shoppingBag = dinerIndex < 0 && (seed % 4 === 0 || seed % 5 === 1);
+    const shoes = crew ? "#473a30" : ["#37312c", "#ddd0b5", "#4a3a33", "#ebe6d9"][(seed * 3) % 4];
+    const tunic = !crew && !cashier && seed % 3 === 0 && dinerIndex < 0, longHair = this.portraitIndex % 2 === 0;
+    const shoppingBag = !crew && !cashier && dinerIndex < 0 && (seed % 4 === 0 || seed % 5 === 1);
     const scarf = clothes[(seed * 7 + 6) % clothes.length];
     const transform = new T.Object3D();
     const put = (j: T.Object3D, form: Form, color: string, x: number, y: number, z: number,
@@ -123,11 +153,20 @@ class Shopper {
       this.parts.push({ actor: this, joint: j, form, color, local: transform.matrix.clone() });
     };
     const height = .91 + (seed % 7) * .026, breadth = .94 + ((seed * 7) % 9) * .016;
-    this.root.scale.set(breadth, height, breadth);
+    this.root.scale.set(breadth, crew || cashier ? 1 : height, breadth);
+    this.head.scale.setScalar(.87 + .016 * (seed % 3));
     put(this.root, "shadow", "#ffffff", 0, .009, .025, .72, 1.08, 1, -Math.PI / 2);
-    const garment = tunic ? "tunic" : seed % 5===0 ? "linen" : "shirt";
-    const shoulderWidth = longHair ? .92 : 1.03;
-    put(this.chest, garment, shirt, 0, 0, 0, shoulderWidth, 1, 1);
+    const garment = crew ? "workwear" : tunic ? "tunic" : seed % 5===0 ? "linen" : "shirt";
+    const shoulderWidth = (longHair ? .92 : 1.03) + .018 * ((seed % 5) - 2);
+    put(this.chest, garment, crew ? "#ffffff" : shirt, 0, 0, 0, shoulderWidth, 1, 1);
+    if (cashier) {
+      const canvas = ["#365650","#514a45","#775743","#3e5264"][seed % 4];
+      put(this.chest, "apron", canvas, 0, 0, .006, shoulderWidth, 1, 1);
+      for (const side of [-1, 1]) {
+        put(this.chest, "oval", canvas, side * .080, .428, .092, .024, .122, .029, -.61, 0, side * .15);
+      }
+      put(this.chest, "bag", "#d4c3a4", -.051, .327, .147, .057, .023, .006);
+    }
     if (tunic) {
       put(this.chest, "hem", shirt, 0, -.015, 0, .98, 1, .97);
       put(this.chest, "oval", scarf, .104, .177, .112, .068, .49, .022, 0, 0, -.13);
@@ -141,7 +180,7 @@ class Shopper {
     put(this.head, "face", "#ffffff", 0, 0, 0, 1, 1, 1);
     put(this.head, "hair", hair, 0, 0, 0, 1, 1, 1);
     // These pieces follow the same joints as the portrait rig, including its seated and carrying poses.
-    put(this.chest, "silhouette", shirt, 0,.20,0, .40,.55,.252);
+    put(this.chest, "silhouette", crew ? "#e19239" : shirt, 0,.20,0, .40,.55,.252);
     put(this.chest, "silhouette", tunic ? shirt : trousersColor, 0,-.048,0, .37,tunic ? .28 : .13,.231);
     put(this.chest, "silhouette", skin, 0,.486,0, .095,.126,.10);
     put(this.head, "silhouette", skin, 0,.123,.006, .211,.262,.224);
@@ -175,15 +214,15 @@ class Shopper {
       put(shoulder,"silhouette",shirt,0,tunic ? -.120 : -.075,0,.137,tunic ? .298 : .223,.145);
       put(elbow,"silhouette",skin,0,-.144,.008,.107,.340,.104);
       put(shoulder, "sleeve", shirt, 0, .009, 0, .124, (tunic ? .268 : .166), .143);
-      if (!tunic) put(shoulder, "forearm", skin, 0, -.142, 0, .102, .131, .114);
+      if (!tunic) put(shoulder, "forearm", skin, 0, -.142, 0, .119, .131, .124);
       put(elbow, "forearm", skin, 0, .006, .001, .103, .237, .114);
       put(elbow, "hand", skin, 0, -.230, .005, 1, .89, 1);
       put(elbow, "oval", skin, -side*.018, -.266, .032, .025, .058, .024, -.26,0,-side*.23);
       if (shoppingBag && side === -1) {
-        this.bag = joint(elbow, 0, 0, 0);
-        put(this.bag, "silhouette", "#bb986d", -.035,-.467,.005,.14,.24,.23);
-        put(this.bag, "ring", "#ad8b63", -.018, -.32, .005, .100, .12, .18, 0, Math.PI / 2);
-        put(this.bag, "bag", seed % 3 === 0 ? "#ab704e" : "#c2a87c", -.035, -.467, .005, .12, .23, .22, 0, -.07);
+        this.bag = joint(elbow, 0, -.298, .005);
+        put(this.bag, "silhouette", "#bb986d", -.035,-.169,0,.14,.24,.23);
+        put(this.bag, "ring", "#ad8b63", -.018, -.022, 0, .100, .12, .18, 0, Math.PI / 2);
+        put(this.bag, "bag", seed % 3 === 0 ? "#ab704e" : "#c2a87c", -.035, -.169, 0, .12, .23, .22, 0, -.07);
       }
       if (dinerIndex >= 0 && side === 1) {
         const grip = this.tableware = joint(elbow, 0, -.294, .016);
@@ -229,8 +268,38 @@ class Shopper {
     this.root.updateMatrixWorld(true);
   }
 
+  private workAtTill(p: PersonPose, tillHand: number) {
+    const cycle = T.MathUtils.euclideanModulo(p.time / (7.7 + this.seed % 3) + this.seed * .36, 1);
+    const tap = T.MathUtils.smoothstep(cycle, .02, .20) * (1 - T.MathUtils.smoothstep(cycle, .38, .52));
+    const wrap = T.MathUtils.smoothstep(cycle, .42, .60) * (1 - T.MathUtils.smoothstep(cycle, .77, .94));
+    const nod = Math.sin(p.time * 1.2 + this.seed);
+    this.chest.rotation.set(.08 + .07 * tap + .055 * wrap, tillHand * (.048 * tap - .046 * wrap), .014 * nod);
+    this.head.rotation.set(.035 + .25 * tap + .21 * wrap + .018 * nod,
+      tillHand * (.12 * tap - .17 * wrap + .070 * nod), .015 * nod);
+    inverseChest.copy(this.chest.quaternion).invert();
+    for (let i = 0; i < this.arms.length; i++) {
+      const side = i * 2 - 1, operatesTill = side === tillHand;
+      const { shoulder, elbow } = this.arms[i];
+      // Reach from the same paving and worktop heights as the terminal, then look back up at a customer.
+      const screenTap = operatesTill ? tap * (.014 * Math.cos(p.time * 13) + .032) : 0;
+      palmTarget.set(side * (operatesTill ? .134 - .055 * tap : .175 + .049 * wrap),
+        operatesTill ? .999 + .135 * tap + screenTap : .975 + .043 * wrap,
+        operatesTill ? .387 + .067 * tap : .398 + .095 * wrap);
+      palmTarget.x /= this.root.scale.x;
+      palmTarget.z /= this.root.scale.z;
+      palmTarget.sub(this.pelvis.position).applyQuaternion(inversePelvis)
+        .sub(this.chest.position).applyQuaternion(inverseChest).sub(shoulder.position);
+      const reach = Math.hypot(palmTarget.x, palmTarget.z);
+      const upper = .266, forearm = .301;
+      const distance = T.MathUtils.clamp(Math.hypot(reach, palmTarget.y), .12, upper + forearm - .001);
+      const shoulderBend = Math.acos(T.MathUtils.clamp((upper ** 2 + distance ** 2 - forearm ** 2) / (2 * upper * distance), -1, 1));
+      shoulder.rotation.set(shoulderBend - Math.atan2(reach, -palmTarget.y),
+        Math.atan2(palmTarget.x, palmTarget.z), 0, "YXZ");
+      elbow.rotation.x = -Math.acos(T.MathUtils.clamp((distance ** 2 - upper ** 2 - forearm ** 2) / (2 * upper * forearm), -1, 1));
+    }
+  }
+
   pose(p: PersonPose) {
-    const step = Math.sin(p.stride), bob = Math.cos(2 * p.stride);
     const wave = p.walking, browse = p.browsing;
     const idle = Math.sin(p.time * 1.4 + this.seed);
     this.root.position.set(p.x, p.floorY, p.z);
@@ -239,38 +308,73 @@ class Shopper {
       this.sit(p);
       return;
     }
-    if (this.bag) this.bag.scale.setScalar(p.carrying === undefined && p.crouch === undefined ? 1 : .0001);
-    const rest=(1-wave) * (this.seed%2 ? 1 : -1);
-    this.pelvis.position.x=.024*rest + .018*step*wave;
-    this.pelvis.position.y = .877 + (.006 + .026 * bob) * wave + idle * .003 * (1 - wave);
-    this.pelvis.rotation.set(0, .07*step*wave+.04*rest, .025*step*wave-.045*rest);
-    this.chest.rotation.set(.043*wave+.092*browse+.012*idle, -.139*step*wave-.062*rest, .036*step*wave+.055*rest);
-    this.head.rotation.set(.14 * browse + .035 * idle, -.14 * step * wave + .23 * Math.sin(p.time * .76 + this.seed) * browse, .035 * browse);
+
+    const phase = p.stride + this.seed * 1.73;
+    const step = Math.cos(phase), weight = Math.sin(phase);
+    const rest = (1 - wave) * (.72 + .28 * Math.sin(p.time * .57 + this.seed)) * (this.seed % 2 ? 1 : -1);
+    const crouch = T.MathUtils.clamp(p.crouch ?? 0, 0, 1);
+    this.pelvis.position.set(
+      .021 * rest - .021 * weight * wave,
+      T.MathUtils.lerp(.877 + idle * .002, .850 - .028 * Math.cos(2 * phase), wave) - .20 * crouch,
+      -.084 * crouch,
+    );
+    this.pelvis.rotation.set(0, .066 * step * wave + .04 * rest, -.036 * weight * wave - .03 * rest);
+    inversePelvis.copy(this.pelvis.quaternion).invert();
+    this.chest.rotation.set(.046 * wave + .085 * browse + .01 * idle + .32 * crouch,
+      -.131 * step * wave - .06 * rest, .047 * weight * wave + .044 * rest);
+    const glance = Math.sin(p.time * .69 + this.seed) * (.15 * browse + .048 * (1 - wave));
+    this.head.rotation.set(.13 * browse + .022 * idle - .09 * crouch, .068 * step * wave + glance, .022 * browse);
+
+    // During stance the ankle travels backwards at the speed of the root. The swing
+    // returns it to the next heel strike with the same tangent as the planted foot.
+    const stance = .55, strideLength = 1.38 / this.root.scale.z;
     for (let i = 0; i < this.legs.length; i++) {
       const { hip, knee, foot } = this.legs[i];
-      const phase = p.stride + i * Math.PI;
-      const bend = Math.max(0, Math.cos(phase));
-      hip.rotation.x = -Math.sin(phase) * .56 * wave - .059 - .065*rest*(i*2-1);
-      knee.rotation.x = .12 + Math.pow(bend, 2) * .82 * wave+.069*rest*(i*2-1);
-      foot.rotation.x = .02 - (hip.rotation.x + knee.rotation.x) * .80;
+      const side = i * 2 - 1;
+      const cycle = T.MathUtils.euclideanModulo(phase / fullTurn + i * .5, 1);
+      const swing = T.MathUtils.clamp((cycle - stance) / (1 - stance), 0, 1);
+      const arch = Math.sin(Math.PI * swing);
+      const swingProgress = swing * swing * (3 - 2 * swing);
+      const forward = cycle <= stance ? strideLength * (stance * .5 - cycle) :
+        strideLength * (stance * (swingProgress - .5) - (1 - stance) * swing * (1 - swing) * (1 - 2 * swing));
+      const pitch = wave * (cycle < stance ?
+        -.19 * (1 - T.MathUtils.smoothstep(cycle, 0, .13)) + .49 * T.MathUtils.smoothstep(cycle, .32, stance) :
+        .49 - .68 * T.MathUtils.smoothstep(swing, .08, .88));
+      // Roll about the heel or toe during contact, leaving the sole tangent to the paving.
+      const ankleY = .055 * Math.cos(pitch) + Math.sin(pitch) * (pitch > 0 ? .174 : -.066);
+      ankleTarget.set(side * (.089 + .026 * crouch + .013 * arch * wave),
+        ankleY + arch * wave * (.144 - .028 * swing),
+        forward * wave + side * .036 * rest);
+      ankleTarget.sub(this.pelvis.position).applyQuaternion(inversePelvis).sub(hip.position);
+      const down = Math.hypot(ankleTarget.x, ankleTarget.y);
+      const distance = T.MathUtils.clamp(Math.hypot(ankleTarget.z, down), .28, .8289);
+      const thigh = .424, shin = .405;
+      const hipFlex = -Math.atan2(ankleTarget.z, down) -
+        Math.acos(T.MathUtils.clamp((thigh ** 2 + distance ** 2 - shin ** 2) / (2 * thigh * distance), -1, 1));
+      const kneeFlex = Math.acos(T.MathUtils.clamp((distance ** 2 - thigh ** 2 - shin ** 2) / (2 * thigh * shin), -1, 1));
+      const roll = Math.atan2(ankleTarget.x, -ankleTarget.y);
+      hip.rotation.set(hipFlex, 0, roll, "ZXY");
+      knee.rotation.x = kneeFlex;
+      foot.rotation.set(pitch - hipFlex - kneeFlex, side * .058, -roll - this.pelvis.rotation.z);
     }
     for (let i = 0; i < this.arms.length; i++) {
       const { shoulder, elbow } = this.arms[i];
-      const side = i * 2 - 1, swing = step * (i === 0 ? 1 : -1);
+      const side = i * 2 - 1, swing = -side * step;
       const reach = i === 1 ? browse : 0;
-      shoulder.rotation.set(.37*swing*wave-.66*reach-.08*(1-wave), -side*.076, side*(.105+.02*wave));
-      elbow.rotation.x = -.23-.22*Math.max(0,-swing)*wave-.63*reach+.05*idle*reach-.04*(1-wave)*(this.seed%3);
+      shoulder.rotation.set(.34 * swing * wave - .66 * reach - .08 * (1 - wave),
+        -side * .074, side * (.094 + .026 * wave + .011 * idle));
+      elbow.rotation.x = -.22 - .25 * Math.max(0, -swing) * wave - .63 * reach +
+        .045 * idle * reach - .05 * (1 - wave) * (this.seed % 3);
     }
+    if (this.bag) {
+      this.bag.scale.setScalar(p.carrying === undefined && p.crouch === undefined ? 1 : .0001);
+      const arm = this.arms[0];
+      this.bag.rotation.x = -.72 * (arm.shoulder.rotation.x + arm.elbow.rotation.x) + .10 * weight * wave;
+    }
+    if (p.tillHand) this.workAtTill(p, p.tillHand);
     if (p.carrying || p.crouch) {
-      const bend = T.MathUtils.clamp(p.crouch ?? 0, 0, 1);
+      const bend = crouch;
       const grip = T.MathUtils.clamp(p.carrying ?? 0, 0, 1);
-      this.pelvis.position.y -= .20 * bend;
-      this.chest.rotation.x += .29 * bend;
-      for (const {hip, knee, foot} of this.legs) {
-        hip.rotation.x -= .72 * bend;
-        knee.rotation.x += 1.43 * bend;
-        foot.rotation.x -= .71 * bend;
-      }
       for (let i = 0; i < this.arms.length; i++) {
         const { shoulder, elbow } = this.arms[i];
         const side = i * 2 - 1;
@@ -283,8 +387,8 @@ class Shopper {
   }
 }
 
-export function makeShopperBatch(scene: T.Group, count: number, seedOffset: number, faceMaterial:T.Material, dinerStart = count) {
-  const people = Array.from({ length: count }, (_, i) => new Shopper(i + seedOffset, i >= dinerStart ? i - dinerStart : -1));
+export function makeShopperBatch(scene: T.Group, count: number, seedOffset: number, faceMaterial:T.Material, dinerStart = count, workerStart = dinerStart, cashierStart = workerStart) {
+  const people = Array.from({ length: count }, (_, i) => new Shopper(i + seedOffset, i >= dinerStart ? i - dinerStart : -1, i >= workerStart && i < dinerStart, i >= cashierStart && i < workerStart));
   const grouped = new Map<Form, Part[]>();
   for (const person of people) for (const part of person.parts) {
     const pile = grouped.get(part.form) ?? [];
@@ -293,15 +397,35 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
   }
   const clothing = new T.MeshStandardMaterial({ roughness: .84, side: T.DoubleSide });
   const shadows = new T.MeshBasicMaterial({ map: contactTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
-  const fabrics = new Map<Garment,T.Material>();
+  const fabrics = new Map<string,T.Material>();
+  const textiles = new Map<Garment, T.Texture>();
+  const followsHip = (form: Form) => ["apron", "shirt", "tunic", "workwear", "linen", "hem"].includes(form);
   function materialFor(form:Form) {
     if(form==="shadow")return shadows;
     if(form==="face")return faceMaterial;
-    const fabric: Garment | null = form==="shirt"||form==="tunic"||form==="linen"||form==="hair" ? form :
-      form==="thigh"||form==="shin" ? "denim" : form==="sleeve" ? "linen" : form==="hem" ? "tunic" : null;
+    const fabric: Garment | null = form==="workwear"||form==="shirt"||form==="tunic"||form==="linen"||form==="hair" ? form :
+      form==="thigh"||form==="shin" ? "denim" : form==="sleeve"||form==="apron" ? "linen" : form==="hem" ? "tunic" : null;
     if(!fabric)return clothing;
-    if(!fabrics.has(fabric))fabrics.set(fabric,new T.MeshStandardMaterial({map:clothTexture(fabric), roughness:.88}));
-    return fabrics.get(fabric)!;
+    const draped = followsHip(form);
+    const key = fabric + (draped ? "-draped" : "");
+    if (!fabrics.has(key)) {
+      if (!textiles.has(fabric)) textiles.set(fabric, clothTexture(fabric));
+      const material = new T.MeshStandardMaterial({ map: textiles.get(fabric), roughness: .88 });
+      if (draped) {
+        // Fabric below each hip follows that thigh. The middle stretches between the two legs.
+        material.onBeforeCompile = shader => {
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nattribute vec2 hemSwing;")
+            .replace("#include <beginnormal_vertex>", `#include <beginnormal_vertex>
+              float legSlope = mix(hemSwing.x, hemSwing.y, smoothstep(-.064, .064, position.x));
+              objectNormal.y += objectNormal.z * legSlope * (1.0 - smoothstep(.005, .05, position.y));`)
+            .replace("#include <begin_vertex>", `#include <begin_vertex>
+              transformed.z += legSlope * max(0.0, .028 - position.y);`);
+        };
+      }
+      fabrics.set(key, material);
+    }
+    return fabrics.get(key)!;
   }
   const tones = new Map<string, T.Color>();
   const batches = Array.from(grouped, ([form, parts]) => {
@@ -309,6 +433,9 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
     const portraits = form === "face"
       ? new T.InstancedBufferAttribute(new Float32Array(parts.length), 1).setUsage(T.DynamicDrawUsage) : null;
     if (portraits) geo.setAttribute("portraitCell", portraits);
+    const hemSwing = followsHip(form)
+      ? new T.InstancedBufferAttribute(new Float32Array(parts.length * 2), 2).setUsage(T.DynamicDrawUsage) : null;
+    if (hemSwing) geo.setAttribute("hemSwing", hemSwing);
     const mesh = new T.InstancedMesh(geo, materialFor(form), parts.length);
     mesh.name="Shopper "+form;
     mesh.frustumCulled = false;
@@ -319,7 +446,7 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
       if (!tones.has(part.color)) tones.set(part.color, new T.Color(part.color));
     }
     scene.add(mesh);
-    return { mesh, form, parts, portraits, tinted, active: [] as Part[] };
+    return { mesh, form, parts, portraits, hemSwing, tinted, active: [] as Part[] };
   });
   const matrix = new T.Matrix4();
   // Pack each draw into the beginning of the instance buffers. Bodies that change detail or
@@ -343,12 +470,20 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
     }
   }
   function syncInstances() {
-    for (const { mesh, active } of batches) {
+    for (const { mesh, active, hemSwing } of batches) {
       if (!mesh.count) continue;
       for (let i = 0; i < active.length; i++) {
         const part = active[i];
         mesh.setMatrixAt(i, matrix.multiplyMatrices(part.joint.matrixWorld, part.local));
+        if (hemSwing) {
+          const { chest, legs } = part.actor;
+          // A seated lap folds back at the hem. Limit the deformation near a horizontal thigh.
+          const left = T.MathUtils.clamp(chest.rotation.x - legs[0].hip.rotation.x, -1.04, 1.08);
+          const right = T.MathUtils.clamp(chest.rotation.x - legs[1].hip.rotation.x, -1.04, 1.08);
+          hemSwing.setXY(i, Math.tan(left), Math.tan(right));
+        }
       }
+      if (hemSwing) hemSwing.needsUpdate = true;
       mesh.instanceMatrix.needsUpdate = true;
     }
   }

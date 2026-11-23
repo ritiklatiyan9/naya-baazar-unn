@@ -1,3 +1,51 @@
+dialog.login-dialog,
+dialog.manager-dialog,
+.manager-dialog .manager-content {
+  color: var(--ink, #1e382f);
+  background: #faf8f0;
+}
+
+dialog.login-dialog {
+  border: 1px solid #cec8b6;
+  border-top: 3px solid #aa9059;
+  border-radius: 3px;
+}
+
+.manager-dialog .manager-content { border-top: 3px solid #aa9059; }
+.manager-dialog .manager-heading { border-color: #cec8b6; }
+
+.manager-dialog .manager-input > span,
+.login-dialog .dialog-body input {
+  border: 1px solid #bcbba9;
+  border-radius: 2px;
+  background: #fffef9;
+}
+
+.manager-dialog .booking-option { border-radius: 2px; }
+.manager-dialog .booking-option:has(:focus-visible) { outline: 2px solid #8d743c; outline-offset: 2px; }
+
+.manager-dialog .booking-save,
+.login-dialog .primary-button {
+  border-radius: 2px;
+  background: #243e34;
+  color: #fffdf5;
+}
+
+.manager-dialog .booking-save:hover:enabled,
+.login-dialog .primary-button:hover:enabled { background: #395547; }
+
+dialog.login-dialog::backdrop,
+dialog.manager-dialog::backdrop { background: rgb(18 35 27 / 60%); }
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.login-dialog[open],
+  dialog.manager-dialog[open] { animation: staff-panel-arrive .28s cubic-bezier(.22,.75,.25,1) both; }
+  @keyframes staff-panel-arrive {
+    from { opacity: 0; translate: 0 .65rem; }
+    to { opacity: 1; translate: 0; }
+  }
+}
+
 @media (max-width: 640px) {
   dialog.manager-dialog,
   dialog.login-dialog {
@@ -10,8 +58,9 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     border: 0;
-    border-radius: 18px 18px 0 0;
-    background: #fdfbf7;
+    border-radius: 6px 6px 0 0;
+    border-top: 3px solid #aa9059;
+    background: #faf8f0;
     box-shadow: 0 -10px 45px #30291e25;
     scroll-padding-block: 16px;
   }
@@ -24,6 +73,7 @@
   .manager-dialog .manager-content {
     min-height: 0;
     gap: 20px;
+    border-top: 0;
   }
 
   .manager-dialog .manager-heading {

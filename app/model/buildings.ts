@@ -3,9 +3,13 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type Unit } from "./geometry";
 import { addRetail } from "./retail";
 import { addRoofSigns } from "./roofSigns";
+import { addRoofTanks } from "./roofTanks";
 import { glassSetback } from "./retailFrontages";
 import { shellBoundaries, type Boundary } from "./wings";
 import { facadeFinish } from "./siteMaterials";
+import { buildGalleryStair } from "./galleryStair";
+import { pavilionStair, stairRectangle } from "./pavilionStairLayout";
+import { addNeonBorder, addShopLanterns } from "./nightLights";
 
 const shades = {
   ...facadeFinish,
@@ -81,6 +85,7 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   const coping = new Surface();
   const reveals = new Surface();
   const details = new Parts();
+  const piers: T.Vector2[] = [];
   const plaster = matte(shades.plaster);
   const fascia = matte(shades.edge);
   const graphite = matte(shades.coping);
@@ -90,8 +95,8 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   const high = deck - (upper ? 0.73 : 0.55);
   const parapet = deck + (upper ? 0.40 : 0.48);
 
-  function plate(contour: T.Vector2[], base: number, depth: number, roof: boolean) {
-    const mesh = new T.Mesh(prism(contour, base, depth), roof ? [tiled, fascia] : plaster);
+  function plate(contour: T.Vector2[], base: number, depth: number, roof: boolean, openings?: T.Vector2[][]) {
+    const mesh = new T.Mesh(prism(contour, base, depth, openings), roof ? [tiled, fascia] : plaster);
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
   }
@@ -106,7 +111,9 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
       return Math.abs(cross) > 1e-8;
     });
     if (!upper) plate(roofCorners, bottom, low - bottom, false);
-    plate(roofCorners, high, deck - high, true);
+    const openings = !upper && wing === shellBoundaries[2]
+      ? [stairRectangle(pavilionStair.firstTread, pavilionStair.back - .10, .10)] : undefined;
+    plate(roofCorners, high, deck - high, true, openings);
 
     let distance = 0;
     let nextPier = 0;
@@ -150,6 +157,7 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
         };
         while (nextPier <= distance + length) {
           const anchor = place(nextPier, 0.34);
+          piers.push(anchor);
           const width = upper ? 0.22 : 0.40;
           details.box(shades.plaster, anchor.x, (low + high) / 2, anchor.y, width, high - low, upper ? 0.32 : 0.47, yaw);
           nextPier += 3.35;
@@ -165,12 +173,16 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
     }
   }
   walls.build(group, plaster, true);
-  soffits.build(group, matte(shades.lining), false);
+  // The ceiling lining is coplanar with the underside of the slab above it, so it is drawn in front.
+  const lining = matte(shades.lining);
+  lining.polygonOffset = true;
+  lining.polygonOffsetFactor = lining.polygonOffsetUnits = -1;
+  soffits.build(group, lining, false);
   coping.build(group, graphite, true);
   reveals.build(group, matte(shades.fasciaShadow), false);
   if (upper) {
     // Access headhouses sit above the marked stair bays; their low tiled caps share the roof finish.
-    const cores = [
+    const headhouses = [
       [599, 794, 4.15, 3.08, 0],
       [917, 267, 3.8, 2.9, 0],
       [1081, 650, 4.35, 3.2, 0],
@@ -178,25 +190,27 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
       [294, 419, 3.05, 2.95, -0.195],
       [706, 486, 3.05, 2.65, -0.21],
       [149, 626, 3.45, 2.8, -0.7],
-    ];
-    for (const [x, z, width, depth, yaw] of cores) {
-      const center = sheetPoint(x, z);
+    ].map(([x, z, width, depth, yaw]) => ({ centre: sheetPoint(x, z), width, depth, yaw }));
+    const height = 1.65;
+    const capBottom = deck + height + 0.031, capDepth = 0.025;
+    for (const { centre, width, depth, yaw } of headhouses) {
       const cos = Math.cos(yaw);
       const sin = Math.sin(yaw);
       const corners = (w: number, d: number) => [
         [-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2],
-      ].map(([u, v]) => new T.Vector2(center.x + cos * u + sin * v, center.y - sin * u + cos * v));
-      const height = 1.65;
-      details.box(shades.plaster, center.x, deck + height / 2, center.y, width, height, depth, yaw);
+      ].map(([u, v]) => new T.Vector2(centre.x + cos * u + sin * v, centre.y - sin * u + cos * v));
+      details.box(shades.plaster, centre.x, deck + height / 2, centre.y, width, height, depth, yaw);
       const doorway = corners(0, depth + 0.045)[2];
       details.box("#65615b", doorway.x, deck + 0.64, doorway.y, 0.80, 1.28, 0.055, yaw);
       const lip = new T.Mesh(prism(corners(width + 0.22, depth + 0.22), deck + height - 0.085, 0.115), graphite);
       lip.castShadow = lip.receiveShadow = true;
       group.add(lip);
-      plate(corners(width - 0.07, depth - 0.07), deck + height + 0.031, 0.025, true);
+      plate(corners(width - 0.07, depth - 0.07), capBottom, capDepth, true);
     }
+    addRoofTanks(group, headhouses, capBottom + capDepth);
   }
   details.build(group);
+  return { soffit: high, walkway: upper ? bottom : low + 0.012, parapet, piers };
 }
 
 export function buildStorey(units: Unit[], floor: Floor, onMaterialsReady?: () => void) {
@@ -204,9 +218,14 @@ export function buildStorey(units: Unit[], floor: Floor, onMaterialsReady?: () =
   const bottom = (upper ? levelHeight : 0) + 0.14;
   const deck = bottom + levelHeight;
   const group = new T.Group();
-  drawShells(group, upper, bottom, deck);
-  if (upper) addRoofSigns(group, units, deck);
+  const shell = drawShells(group, upper, bottom, deck);
+  if (upper) {
+    addRoofSigns(group, units, deck);
+    addNeonBorder(group, shell.parapet);
+  }
+  buildGalleryStair(group, floor);
   const updateDoors = addRetail(group, units, floor, onMaterialsReady);
+  addShopLanterns(group, units, floor, shell.soffit, shell.walkway);
 
   // Preserve the actual measured unit polygons as pick targets and optional availability overlays.
   const volumes: T.BufferGeometry[] = [];
@@ -245,6 +264,7 @@ export function buildStorey(units: Unit[], floor: Floor, onMaterialsReady?: () =
     updateDoors,
     body,
     units,
+    piers: shell.piers,
     pick(face: T.Face) { return ids[face.a]; },
     setAvailabilityVisible(show: boolean) { overlay.visible = show; },
     color(status: Record<number, Booking>) {

@@ -1,14 +1,19 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { addEntranceLights, addHighMasts, applyNight, highMastBases, nightComposer } from "./nightLights";
 import { bindSurfaceGestures } from "./gestures";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
+import { DELIVERY_SHOT_START, walkthroughs } from "./walkthrough";
 import { westPassageWalkway, wingBoundaries } from "./wings";
 import { cafeTableFootprints } from "./cafes";
+import { galleryStairHeight } from "./galleryStair";
+import { pavilionStair, stairRectangle } from "./pavilionStairLayout";
+import { shopCheckout } from "./shopCheckouts";
 import { entranceLength, entrancePoint, entranceSign, fountainWallFace } from "./entranceLayout";
 import { entranceFountainFootprints } from "./entranceFountain";
 import { entrancePalmTrunks } from "./entrancePalms";
-import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
+import { displayDepth, glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
   levelHeight,
@@ -23,6 +28,14 @@ type ViewOptions = {
   select: (id: number) => void;
   failed: () => void;
   viewChanged?: (view: CameraView | null) => void;
+  walkthroughChanged?: (playback: WalkthroughPlayback | null) => void;
+};
+export type WalkthroughPlayback = {
+  floor: Floor;
+  status: "playing" | "paused" | "ended";
+  elapsed: number;
+  duration: number;
+  chapter: string;
 };
 export type ModelState = {
   floor: Floor;
@@ -30,7 +43,7 @@ export type ModelState = {
   selected: number | null;
   statuses: Record<number, Booking>;
 };
-type WalkingView = "street" | "gallery" | "delivery" | "entrance";
+type WalkingView = "street" | "gallery" | "delivery" | "entrance" | "shop";
 export type CameraView = "overview" | "courtyard" | WalkingView;
 
 export async function createViewer(host: HTMLDivElement, signal: AbortSignal, options: ViewOptions) {
@@ -60,7 +73,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     controls.dispose();
     disposeScene(scene);
     scene.traverse((obj) => {
-      if (obj instanceof T.DirectionalLight) obj.shadow.dispose();
+      if (obj instanceof T.DirectionalLight || obj instanceof T.SpotLight) obj.shadow.dispose();
     });
     renderer.dispose();
     renderer.forceContextLoss();
@@ -86,7 +99,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     host.appendChild(canvas);
 
     // Broad, neutral studio fill keeps the ivory stock distinct from the recessed glazing.
-    scene.add(new T.HemisphereLight("#edf2f8", "#c3c4c3", 1.76));
+    const sky = new T.HemisphereLight("#edf2f8", "#c3c4c3", 1.76);
+    scene.add(sky);
     const key = new T.DirectionalLight("#fffaf5", 2.25);
     key.position.set(-48, 88, 60);
     key.castShadow = true;
@@ -109,6 +123,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     backdrop.receiveShadow = true;
     scene.add(backdrop);
     const { boardOutline, activity, updateFountain } = buildMarket(scene, groundUnits, firstUnits);
+    addHighMasts(scene);
+    addEntranceLights(scene);
     const boardBounds = new T.Box2().setFromPoints(boardOutline);
     const horizon = walkingHorizon(() => { if (!closed) render(); });
     horizon.visible = false;
@@ -144,15 +160,23 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     let fittedDistance = 190;
     let preset: CameraView | null = "overview";
     let location: CameraView = "overview";
+    let walkingFloor: Floor = "ground";
+    let walkingHeight = shopFloorHeight.ground;
     const paths: Partial<Record<Floor, ReturnType<typeof walkableFloor>>> = {};
     const previousEye = new T.Vector2();
     let activityEnabled = !matchMedia("(prefers-reduced-motion: reduce)").matches;
     let visible = true;
     let dirty = true;
     let activityTime = 0;
+    let deliveryOffset = 0;
+    let tour: WalkthroughPlayback | null = null;
+    let aerial = false;
+    let reportedQuarter = -1;
     let lastTick = 0;
     let lastDoorFrame = 0;
     let doorsMoving = false;
+    let night = false;
+    let composer: ReturnType<typeof nightComposer> | null = null;
     let state: ModelState = { floor: "ground", entire: true, selected: null, statuses: {} };
     let lastState: ModelState | undefined;
     let outline: T.Mesh | undefined;
@@ -164,28 +188,64 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     function drawFrame(now: number) {
       frame = 0;
       if (closed || document.hidden || !visible) return;
-      if (activityEnabled && (!lastTick || now - lastTick >= 1000 / 30 - 1)) {
-        if (lastTick) activityTime += Math.min((now - lastTick) / 1000, 0.15);
+      const animating = tour ? tour.status === "playing" : activityEnabled;
+      if (animating && (!lastTick || now - lastTick >= 1000 / 30 - 1)) {
+        const delta = lastTick ? (now - lastTick) / 1000 : 0;
         lastTick = now;
-        activity.update(activityTime);
-        updateFountain(activityTime);
+        if (tour) positionWalkthrough(tour.elapsed + delta);
+        else {
+          activityTime += Math.min(delta, 0.15);
+          activity.update(activityTime, deliveryOffset ? activityTime + deliveryOffset : undefined);
+          updateFountain(activityTime);
+        }
         dirty = true;
       }
       if (dirty || (doorsMoving && now - lastDoorFrame >= 1000 / 30 - 1)) {
-        const step = activityEnabled && lastDoorFrame ? Math.min((now - lastDoorFrame) / 1000, 0.1) : 1;
+        const step = animating && lastDoorFrame ? Math.min((now - lastDoorFrame) / 1000, 0.1) : 1;
         lastDoorFrame = now;
         const groundMoving = ground.updateDoors(camera.position, step, activity.openDoors.ground);
         const upperMoving = first.updateDoors(camera.position, step, activity.openDoors.first);
         doorsMoving = groundMoving || upperMoving;
         activity.setCameraPosition(camera.position);
-        renderer.render(scene, camera);
+        if (composer && night) composer.render();
+        else renderer.render(scene, camera);
         dirty = false;
       }
-      if (activityEnabled || doorsMoving) queueFrame();
+      if (animating || doorsMoving) queueFrame();
     }
     function render() {
       dirty = true;
       queueFrame();
+    }
+    function setNight(on: boolean) {
+      if (on === night) return;
+      night = on;
+      // The bloom exists only for night frames, so the day view renders exactly as before.
+      if (on && !composer) {
+        const output = (composer = nightComposer(renderer, scene, camera));
+        cleanups.push(() => {
+          output.passes.forEach((pass) => pass.dispose());
+          output.dispose();
+        });
+      }
+      // Blue-hour ambient keeps the whole site readable. Lamps add warmth without a black void around them.
+      sky.color.set(on ? "#7c8db6" : "#edf2f8");
+      sky.groundColor.set(on ? "#3c3a44" : "#c3c4c3");
+      sky.intensity = on ? 1.25 : 1.76;
+      key.color.set(on ? "#bcc8ea" : "#fffaf5");
+      key.intensity = on ? 0.6 : 2.25;
+      // After dark the fill turns upward: the warm bounce from lit shops and paving onto every ceiling.
+      fill.color.set(on ? "#ffc890" : "#e6edf7");
+      fill.intensity = on ? 0.8 : 0.68;
+      fill.position.set(on ? 0 : 47, on ? -60 : 38, on ? 0 : -65);
+      studioBackground.set(on ? "#0d1628" : "#183a30");
+      backdrop.material.color.set(on ? "#2c3850" : "#264838");
+      // The horizon photograph is tinted to dusk, and the sky behind it takes the same tint so no seam shows.
+      horizon.material.color.set(on ? "#33405f" : "#ffffff");
+      skylineBackground.set("#cfddde").multiply(horizon.material.color);
+      applyNight(scene, on);
+      renderer.shadowMap.needsUpdate = true;
+      render();
     }
     function setActivityEnabled(enabled: boolean) {
       activityEnabled = enabled;
@@ -254,20 +314,30 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     }
     function onFoot() { return location !== "overview" && location !== "courtyard"; }
     function eyeHeight() {
-      return (location === "gallery" ? shopFloorHeight.first : shopFloorHeight.ground) + 1.58;
+      return shopFloorHeight[walkingFloor] + 1.58;
     }
     function fieldOfView() {
+      if (tour) return T.MathUtils.lerp(74, 60, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
       if (location === "entrance") return T.MathUtils.lerp(80, 60, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
       return onFoot() ? 60 : 32;
     }
     function walkingView(view: WalkingView) {
+      if (view === "shop") {
+        const route = walkthroughs[walkingFloor];
+        const pose = route.sample(route.shopTime, camera.aspect);
+        camera.position.fromArray(pose.eye);
+        controls.target.fromArray(pose.target);
+        previousEye.set(camera.position.x, camera.position.z);
+        controls.update();
+        return;
+      }
       // A diagonal from the opposite kerb frames both ends of the wall, including on a phone.
       const aimOffset = T.MathUtils.lerp(1.55, -2.75, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
       const viewpoints = {
         entrance: { eye: entrancePoint(-4.95, entranceLength - .56), target: entrancePoint(fountainWallFace, entranceSign.z + aimOffset), drop: -.12 },
         street:   { eye: sheetPoint(939, 569), target: sheetPoint(992, 603), drop: 0.31 },
         gallery:  { eye: sheetPoint(1124, 747), target: sheetPoint(1069, 713), drop: 0.65 },
-        delivery: { eye: sheetPoint(833, 315), target: sheetPoint(870, 367), drop: 0.40 },
+        delivery: { eye: sheetPoint(805, 411), target: sheetPoint(870, 326), drop: 0.40 },
       } as const;
       const { eye, target: destination, drop } = viewpoints[view];
       camera.position.set(eye.x, eyeHeight(), eye.y);
@@ -282,13 +352,19 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       camera.fov = fieldOfView();
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
-      if (preset === "overview") overview();
+      composer?.setSize(width, height);
+      if (tour) positionWalkthrough(tour.elapsed, true);
+      else if (preset === "overview") overview();
       else if (preset === "courtyard") courtyard();
       else if (preset === "entrance") walkingView("entrance");
       render();
     };
     function setView(view: CameraView) {
+      closeWalkthrough();
       preset = view;
+      if (view === "shop") walkingFloor = state.entire && onFoot() ? walkingFloor : state.floor;
+      else walkingFloor = view === "gallery" ? "first" : "ground";
+      walkingHeight = shopFloorHeight[walkingFloor];
       location = view;
       const walking = onFoot();
       horizon.visible = walking;
@@ -309,12 +385,119 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       options.viewChanged?.(view);
       render();
     }
+    /** Stand at a shop's own frontage, on the edge of its arcade, looking out at the mall. Returns its floor, or null for an unknown number. */
+    function viewFromShop(id: number): Floor | null {
+      const upper = firstUnits.some((unit) => unit.id === id);
+      const floor: Floor = upper ? "first" : "ground";
+      const arcade = wingBoundaries.flatMap((wing) => retailBays(wing, upper ? firstUnits : groundUnits, floor)).find((bay) => bay.id === id);
+      if (!arcade) return null;
+      const door = shopEntrance((arcade.shop ?? arcade).width).center;
+      const station = arcade.shop ? arcade.shop.galleryAt(door) : door;
+      // In front of the shop's door and in line with the arcade piers, stepping aside where one stands there.
+      const spot = (aside: number) => arcade.at(station + aside, shopViewInset);
+      const piers = (upper ? first : ground).piers;
+      const aside = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05].find((step) => piers.every((pier) => pier.distanceTo(spot(step)) > 0.6)) ?? 0;
+      const eye = spot(aside), outward = arcade.at(station + aside, shopViewInset - 1).sub(eye).normalize();
+      // Borrow the on-foot set-up of this floor's walking view, then move to the shop as a free view.
+      setView(upper ? "gallery" : "street");
+      preset = null;
+      camera.position.set(eye.x, eyeHeight(), eye.y);
+      controls.target.set(eye.x + 6 * outward.x, eyeHeight() - (upper ? 0.65 : 0.31), eye.y + 6 * outward.y);
+      previousEye.copy(eye);
+      controls.update();
+      canvas.focus({ preventScroll: true });
+      render();
+      return floor;
+    }
+    function positionWalkthrough(seconds: number, forceReport = false) {
+      if (!tour) return;
+      const elapsed = T.MathUtils.clamp(seconds, 0, tour.duration);
+      const pose = walkthroughs[tour.floor].sample(elapsed, camera.aspect);
+      aerial = pose.aerial;
+      horizon.visible = !aerial;
+      camera.position.fromArray(pose.eye);
+      controls.target.fromArray(pose.target);
+      camera.lookAt(controls.target);
+      previousEye.set(camera.position.x, camera.position.z);
+      activityTime = elapsed;
+      activity.update(elapsed, deliveryOffset ? elapsed + deliveryOffset : undefined);
+      updateFountain(elapsed);
+      const ended = elapsed === tour.duration;
+      const quarter = Math.floor(elapsed * 4);
+      const report = forceReport || ended || quarter !== reportedQuarter || tour.chapter !== pose.chapter;
+      tour.elapsed = elapsed;
+      tour.chapter = pose.chapter;
+      if (ended) tour.status = "ended";
+      if (report) {
+        reportedQuarter = quarter;
+        options.walkthroughChanged?.({ ...tour });
+      }
+    }
+    function startWalkthrough(floor: Floor = "ground") {
+      setView("street");
+      preset = null;
+      tour = { floor, status: "playing", elapsed: 0, duration: walkthroughs[floor].duration, chapter: "" };
+      deliveryOffset = floor === "ground" ? -DELIVERY_SHOT_START : 0;
+      controls.enabled = false;
+      canvas.style.pointerEvents = "none";
+      canvas.tabIndex = -1;
+      camera.fov = fieldOfView();
+      camera.updateProjectionMatrix();
+      options.viewChanged?.(null);
+      lastTick = 0;
+      positionWalkthrough(0, true);
+      render();
+    }
+    function toggleWalkthrough() {
+      if (!tour) return;
+      if (tour.status === "ended") { startWalkthrough(tour.floor); return; }
+      tour.status = tour.status === "playing" ? "paused" : "playing";
+      lastTick = 0;
+      options.walkthroughChanged?.({ ...tour });
+      render();
+    }
+    function seekWalkthrough(seconds: number) {
+      if (!tour || !Number.isFinite(seconds)) return;
+      if (tour.status === "ended") tour.status = "paused";
+      lastTick = 0;
+      lastDoorFrame = 0;
+      positionWalkthrough(seconds, true);
+      render();
+    }
+    function closeWalkthrough() {
+      if (!tour) return;
+      tour = null;
+      controls.enabled = true;
+      canvas.style.pointerEvents = "";
+      canvas.tabIndex = 0;
+      canvas.style.cursor = "grab";
+      lastTick = 0;
+      options.walkthroughChanged?.(null);
+      if (aerial) {
+        aerial = false;
+        setView("overview");
+        return;
+      }
+      walkingFloor = camera.position.y >= (shopFloorHeight.first + shopFloorHeight.ground) / 2 + 1.58 ? "first" : "ground";
+      walkingHeight = shopFloorHeight[walkingFloor];
+      location = walkingFloor === "first" ? "gallery" : "street";
+      camera.fov = fieldOfView();
+      camera.updateProjectionMatrix();
+      // Adopt the current shot as a walking view without shifting the eye when
+      // OrbitControls next clamps the distance to its pivot.
+      const direction = camera.getWorldDirection(new T.Vector3());
+      controls.target.copy(camera.position).addScaledVector(direction, 4);
+      controls.update();
+      options.viewChanged?.(location);
+      render();
+    }
     function moved() {
       if (preset === null) return;
       preset = null;
       options.viewChanged?.(onFoot() ? location : null);
     }
     function zoom(factor: number) {
+      if (tour) return;
       moved();
       const offset = camera.position.clone().sub(controls.target);
       offset.setLength(T.MathUtils.clamp(offset.length() / factor, controls.minDistance, controls.maxDistance));
@@ -323,6 +506,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       render();
     }
     function rotate(step: number) {
+      if (tour) return;
       moved();
       if (onFoot()) { lookAround(step, 0); return; }
       const offset = camera.position.clone().sub(controls.target);
@@ -342,28 +526,58 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       render();
     }
     function constrainCamera() {
+      if (tour) return;
       if (preset === null) {
         const current = onFoot() ? camera.position : controls.target;
-        let x: number, z: number;
+        let x: number, z: number, height = current.y;
         if (onFoot()) {
-          const floor = location === "gallery" ? "first" : "ground";
-          paths[floor] ??= walkableFloor(boardBounds, boardOutline, floor, floor === "first" ? firstUnits : groundUnits);
-          const movedEye = paths[floor]!.travel(previousEye, current.x, current.z);
-          x = movedEye.x;
-          z = movedEye.y;
-          previousEye.copy(movedEye);
+          const initialFloor = walkingFloor;
+          moveOnFoot(current.x, current.z);
+          x = previousEye.x;
+          z = previousEye.y;
+          height = walkingHeight + 1.58;
+          if (initialFloor !== walkingFloor) {
+            location = walkingFloor === "first" ? "gallery" : "street";
+            options.viewChanged?.(location);
+          }
         } else {
           x = T.MathUtils.clamp(current.x, boardBounds.min.x, boardBounds.max.x);
           z = T.MathUtils.clamp(current.z, boardBounds.min.y, boardBounds.max.y);
         }
-        const correction = new T.Vector3(x - current.x, onFoot() ? eyeHeight() - current.y : 0, z - current.z);
+        const correction = new T.Vector3(x - current.x, height - current.y, z - current.z);
         camera.position.add(correction);
         controls.target.add(correction);
       }
       render();
     }
+    function moveOnFoot(x: number, z: number) {
+      const dx = x - previousEye.x, dz = z - previousEye.y;
+      const count = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) * walkPixelsPerMetre));
+      // Sample the segment to prevent long drags or keyboard steps crossing thin walls and rails.
+      for (let i = 0; i < Math.min(count, 180); i++) {
+        const nx = previousEye.x + dx / count, nz = previousEye.y + dz / count;
+        if (!takeStep(nx, nz) && !takeStep(nx, previousEye.y) && !takeStep(previousEye.x, nz)) break;
+      }
+    }
+    function takeStep(x: number, z: number) {
+      const height = galleryStairHeight(x, z, walkingHeight);
+      if (height === null) return false;
+      if (height !== undefined) {
+        if (Math.abs(height - walkingHeight) > .26 || (!first.group.visible && height > shopFloorHeight.ground)) return false;
+        walkingHeight = height;
+        walkingFloor = height > (shopFloorHeight.first + shopFloorHeight.ground) / 2 ? "first" : "ground";
+      } else {
+        const units = walkingFloor === "first" ? firstUnits : groundUnits;
+        const allowed = paths[walkingFloor] ??= walkableFloor(boardBounds, boardOutline, walkingFloor, units);
+        if (!allowed(x, z)) return false;
+        walkingHeight = shopFloorHeight[walkingFloor];
+      }
+      previousEye.set(x, z);
+      return true;
+    }
     function update(next: ModelState) {
       state = next;
+      if (tour && next.selected !== null && next.selected !== lastState?.selected) closeWalkthrough();
       const showUpper = next.entire || next.floor === "first";
       activity.setUpperVisible(showUpper);
       if (first.group.visible !== showUpper) {
@@ -371,6 +585,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         renderer.shadowMap.needsUpdate = true;
       }
       if (!showUpper && location === "gallery") setView("street");
+      if (location === "shop" && !next.entire && walkingFloor !== next.floor) setView("shop");
       if (lastState?.statuses !== next.statuses) {
         ground.color(next.statuses);
         first.color(next.statuses);
@@ -424,6 +639,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       pinchDrag = false,
       dragged = false;
     function pan(dx: number, dy: number) {
+      if (tour) return;
       moved();
       controls.pan(dx * controls.panSpeed, dy * controls.panSpeed);
     }
@@ -439,6 +655,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     });
     cleanups.push(gestures.dispose);
     function down(e: PointerEvent) {
+      if (tour) return;
       canvas.focus({ preventScroll: true });
       pointers.set(e.pointerId, new T.Vector2(e.clientX, e.clientY));
       canvas.setPointerCapture(e.pointerId);
@@ -458,6 +675,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       }
     }
     function move(e: PointerEvent) {
+      if (tour) return;
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) dragged = true;
       const position = pointers.get(e.pointerId);
       if (position) {
@@ -489,6 +707,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         ? pointers.keys().next().value ?? null : null;
     }
     function up(e: PointerEvent) {
+      if (tour) { cancel(e); return; }
       release(e);
       if (
         start?.id === e.pointerId &&
@@ -507,6 +726,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       dragged = true;
     }
     function keyboard(e: KeyboardEvent) {
+      if (tour) return;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       const key = e.key.toLowerCase();
       if (key === "+" || key === "=") zoom(1.3);
@@ -567,16 +787,20 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       first.setAvailabilityVisible(show);
       render();
     }
-    return { update, zoom, setView, setAvailabilityVisible, setActivityEnabled, dispose };
+    return { update, zoom, setView, viewFromShop, setAvailabilityVisible, setActivityEnabled, setNight,
+      startWalkthrough, toggleWalkthrough, seekWalkthrough, closeWalkthrough, dispose };
   } catch (error) {
     dispose();
     throw error;
   }
 }
 
+// A visitor arriving by shop number stands this far in from the arcade edge, on the line of its piers.
+const shopViewInset = 0.34;
+const walkPixelsPerMetre = 6;
 /** Floor-level navigation follows walkways and passes through the entrances into individual shop aisles. */
 function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, units: Unit[]) {
-  const ppm = 6;
+  const ppm = walkPixelsPerMetre;
   const size = bounds.getSize(new T.Vector2());
   const canvas = document.createElement("canvas");
   canvas.width = Math.ceil(size.x * ppm);
@@ -597,11 +821,14 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
     polygon(boundary);
   }
   const glass = glassSetback[floor];
+  const checkouts: T.Vector2[][] = [];
   for (const wing of wingBoundaries) {
     c.fillStyle = "black";
     polygon(wing.points);
     c.fillStyle = "white";
     for (const arcade of retailBays(wing, units, floor)) {
+      const checkout = shopCheckout(arcade, floor, units);
+      if (checkout) checkouts.push(checkout.footprint(.18));
       const bay = arcade.shop ?? arcade;
       const half = bay.width / 2;
       const doorway = shopEntrance(bay.width);
@@ -621,7 +848,8 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
       if (arcade.shop) band(-half, half, glass - .34, glass - .18);
       band(doorway.center - doorway.halfWidth + 0.13, doorway.center + doorway.halfWidth - 0.13,
         glass - 0.36, glass + 0.46);
-      band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42);
+      // The clear floor in front of the displays grows with the depth of the room.
+      band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42 + arcade.depth - displayDepth);
       // Trace the approach from the arcade to the glass and then straight into the room.
       // At a fitted corner the approach changes direction at the recessed doorway.
       const outside = bay.at(doorway.center, glass - 0.58);
@@ -643,6 +871,7 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
   }
   c.fillStyle = "white";
   polygon(westPassageWalkway);
+  polygon(stairRectangle(pavilionStair.galleryEdge + .25, pavilionStair.entrance + .06));
   if (floor === "ground") {
     c.fillStyle = "black";
     for (const {minX, minZ, maxX, maxZ} of entranceFountainFootprints) {
@@ -663,29 +892,19 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
       c.arc(table.center.x, table.center.y, table.radius + 0.16, 0, Math.PI * 2);
       c.fill();
     }
+    for (const mast of highMastBases) {
+      c.beginPath();
+      c.arc(mast.centre.x, mast.centre.y, mast.radius + 0.19, 0, Math.PI * 2);
+      c.fill();
+    }
   }
+  c.fillStyle = "black";
+  for (const footprint of checkouts) polygon(footprint);
   const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
   const width = canvas.width, height = canvas.height;
-  function allowed(x: number, z: number) {
+  return (x: number, z: number) => {
     const i = Math.floor((x - bounds.min.x) * ppm), j = Math.floor((z - bounds.min.y) * ppm);
     return i > 1 && j > 1 && i < width - 2 && j < height - 2 && pixels[4 * (j * width + i)] > 100;
-  }
-  const position = new T.Vector2();
-  return {
-    travel(from: T.Vector2, x: number, z: number) {
-      position.copy(from);
-      const dx = x - from.x, dz = z - from.y;
-      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) * ppm));
-      // Sample the segment to avoid jumping through windows on long pointer moves; slide along walls.
-      for (let i = 0; i < Math.min(steps, 180); i++) {
-        const nextX = position.x + dx / steps, nextZ = position.y + dz / steps;
-        if (allowed(nextX, nextZ)) position.set(nextX, nextZ);
-        else if (allowed(nextX, position.y)) position.x = nextX;
-        else if (allowed(position.x, nextZ)) position.y = nextZ;
-        else break;
-      }
-      return position;
-    },
   };
 }
 

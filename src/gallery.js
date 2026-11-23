@@ -117,7 +117,7 @@ function photoGrid(container, panel) {
   panel.innerHTML = '<div class="nb-photo-grid" id="nb-gallery-photos">' + photographs.map(([id, title], index) =>
     `<button type="button" class="nb-photo-card" data-index="${index}" aria-label="Enlarge ${title.toLowerCase()}">
       <span class="nb-photo-frame">
-        <img src="${renderPath(id, true)}" loading="${index < 2 ? 'eager' : 'lazy'}" alt="" width="640" height="400">
+        <img src="${index === 0 ? renderPath(id) : renderPath(id, true)}" loading="${index < 2 ? 'eager' : 'lazy'}" alt="" width="640" height="400">
         <span aria-hidden="true" class="nb-photo-expand">${icon('expand')}</span>
       </span>
       <span class="nb-photo-title">${title}</span>
@@ -140,7 +140,8 @@ function photoGrid(container, panel) {
 export function mountGallery(container) {
   container.innerHTML = `<section class="nb-media-section" aria-label="Project gallery">
     <header class="nb-media-heading">
-      <h1>Photos &amp; videos</h1>
+      <div><p class="feature-label">Photos &amp; videos</p><h1>Market gallery.</h1></div>
+      <p class="nb-heading-note">Sixteen architectural views, from the street entrance to an aerial view of the courtyard.</p>
     </header>
     <div class="nb-gallery-filters" role="group" aria-label="Media type">
       <button type="button" data-kind="photos" aria-pressed="true">${icon('image')} Photos <span>${photographs.length}</span></button>
@@ -165,7 +166,8 @@ export function mountGallery(container) {
 export function mountWalkthrough(container) {
   container.innerHTML = `<section class="nb-media-section" aria-label="Project walkthrough">
     <header class="nb-media-heading">
-      <h1>Market walkthrough</h1>
+      <div><p class="feature-label">Architectural film</p><h1>Market walkthrough.</h1></div>
+      <p class="nb-heading-note">Follow the internal drive, pass the shopfronts and enter the central plaza.</p>
     </header>
     <div class="nb-tour-layout">
       <div class="nb-tour-screen">

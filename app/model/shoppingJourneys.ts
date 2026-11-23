@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Floor } from "./geometry";
-import { glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
+import { displayDepth, glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
 import type { PersonPose } from "./shoppers";
 import { wingBoundaries, type Boundary } from "./wings";
 
@@ -47,9 +47,11 @@ function shopStop(arcade: RetailBay, along: number, inset: number, lane: number)
   const display = Math.min(.96, bay.width * .5 - .53);
   const door = bay.at(center, inset);
   const normal = bay.at(display, inset + 1.6).sub(bay.at(display, inset + 1));
+  // The displays stand against the rear wall, further in where the room is deeper.
+  const rear = inset + arcade.depth - displayDepth;
   // Keep the approach perpendicular to the glass until clear of the inward-opening leaf.
   const thresholdPath = [
-    bay.at(display, inset + 1.13), bay.at((display + center) / 2, inset + 1.05),
+    bay.at(display, rear + 1.13), bay.at((display + center) / 2, rear + 1.05),
     bay.at(center, inset + .76), bay.at(center, inset + .30), door,
     bay.at(center, (lane + inset) / 2), bay.at(center, lane),
   ];
@@ -68,7 +70,7 @@ function hasClearInterior(wing: Boundary, stop: Stop, inset: number) {
       return (point.x - a.x - u * dx) ** 2 + (point.y - a.y - u * dy) ** 2 >= (depth - .20) ** 2;
     });
   }
-  return clear(stop.thresholdPath[0], inset + 1.13) && clear(stop.thresholdPath[2], inset + .76);
+  return clear(stop.thresholdPath[0], inset + stop.bay.depth - displayDepth + 1.13) && clear(stop.thresholdPath[2], inset + .76);
 }
 
 const speedRamp = .55;
@@ -92,7 +94,7 @@ function connectShops(from: Stop, to: Stop, first: RetailBay, lane: number, seed
 
 // Each traveller has a small itinerary of neighbouring shops, a clear display to approach
 // at each stop, and a separate part of the arcade from the other shop-to-shop travellers.
-export function wingJourneys(bays: RetailBay[], floor: Floor, occupied: Set<number>, wingIndex: number, receivingDoor?: number) {
+export function wingJourneys(bays: RetailBay[], floor: Floor, occupied: Set<number>, wingIndex: number, receivingDoors: number[]) {
   const first = bays[0], lane = glassSetback[floor] - .34;
   let edge = -first.width / 2;
   const stops: Stop[] = [];
@@ -108,7 +110,7 @@ export function wingJourneys(bays: RetailBay[], floor: Floor, occupied: Set<numb
     const firstIndex = i;
     const visits = [stops[i++]];
     while (i < stops.length && visits.length < 3) {
-      if (receivingDoor !== undefined && stops[firstIndex].doorAlong < receivingDoor && stops[i].doorAlong > receivingDoor) break;
+      if (receivingDoors.some(door => stops[firstIndex].doorAlong < door && stops[i].doorAlong > door)) break;
       visits.push(stops[i++]);
     }
     if (visits.length < 2) continue;

@@ -4,7 +4,9 @@ import { buildMarketActivity } from "./marketActivity";
 import { asphaltTexture, courtyardRosette, paverTexture, turfTexture } from "./siteMaterials";
 import { boardOutline, eastFacadeAt, entranceLength, entranceOrigin, entrancePoint, entranceWidth, entranceYaw } from "./entranceLayout";
 import { addEntranceFountain } from "./entranceFountain";
+import { addGardenTrees } from "./gardenTrees";
 import { addEntrancePalms, entrancePalmTrunks } from "./entrancePalms";
+import { roadCenterMarkings } from "./carriageway";
 
 function surface(shape: T.Shape, color: string, thickness: number, y: number, texture?: T.Texture) {
   const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 18 });
@@ -41,7 +43,7 @@ function groundShape(points: T.Vector2[]) {
   return new T.Shape(points.map(p => new T.Vector2(p.x, -p.y)));
 }
 
-function buildEntrance(scene: T.Scene, stone: T.Texture) {
+function buildEntrance(scene: T.Scene, stone: T.Texture, wind: T.IUniform<number>) {
   const half = entranceWidth / 2;
   const shoulder = 9.88;
   const pavement = groundShape([
@@ -70,37 +72,9 @@ function buildEntrance(scene: T.Scene, stone: T.Texture) {
   landscape.rotation.y = entranceYaw;
   scene.add(landscape);
   beds.build(landscape);
-  addEntrancePalms(landscape);
+  addEntrancePalms(landscape, wind);
   return addEntranceFountain(landscape);
 }
-function tree(parts: Parts, px: number, pz: number, size: number, seed: number, planter: boolean) {
-  const { x, y: z } = sheetPoint(px, pz);
-  const base = planter ? 0.13 : -0.055;
-  if (planter) {
-    parts.add("pole", "#aba699", new T.Vector3(x, 0.13, z), new T.Vector3(1.35, 0.07, 1.35));
-    parts.add("pole", "#5a5549", new T.Vector3(x, 0.17, z), new T.Vector3(1.18, 0.025, 1.18));
-  }
-  const v = (dx: number, y: number, dz: number) =>
-    new T.Vector3(x + dx * size, base + y * size, z + dz * size);
-  parts.rod("#706345", v(0, 0, 0), v(0.04, 0.7, 0), 0.047 * size);
-  const palette = ["#56694f", "#788769", "#899473", "#647a59", "#748367"];
-  for (let i = 0; i < 6; i++) {
-    const a = seed * 0.78 + i * 2.39996,
-      r = i === 5 ? 0 : 0.23;
-    const dx = Math.sin(a) * r,
-      dz = Math.cos(a) * r,
-      h = i === 5 ? 0.96 : 0.72 + (i % 3) * 0.065;
-    parts.rod("#766648", v(0.02, 0.38, 0), v(dx, h, dz), 0.023 * size);
-    parts.add(
-      "crown",
-      palette[(seed + i) % palette.length],
-      v(dx, h, dz),
-      new T.Vector3(0.53, 0.53 + (i % 2) * 0.14, 0.55).multiplyScalar(size),
-      new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), a),
-    );
-  }
-}
-
 function parkedBike(
   parts: Parts,
   px: number,
@@ -224,10 +198,11 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   road.line(797, 128).line(875, 128);
   east.forEach(p => road.line(p.x, p.y));
   road.lineTo(joinRight.x, -joinRight.y).lineTo(outsideRight.x, -outsideRight.y).closePath();
-  const asphalt = surface(road, "#ffffff", 0.087, -0.055, asphaltTexture());
+  const roadBase = -.055, asphaltThickness = .087;
+  const asphalt = surface(road, "#ffffff", asphaltThickness, roadBase, asphaltTexture());
   asphalt.name = "Market carriageway";
   asphalt.material[1].color.set("#363739");
-  scene.add(asphalt, insetKerb(west), insetKerb(east));
+  scene.add(asphalt, roadCenterMarkings(roadBase + asphaltThickness + .004), insetKerb(west), insetKerb(east));
 
   const detail = new Parts();
   const med = sheetPoint(828, 650);
@@ -238,10 +213,8 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   disc.receiveShadow = true;
   scene.add(disc);
 
-  [[907, 590], [1164, 701]].forEach(([x, z], i) =>
-    tree(detail, x, z, 3.2 + i * 0.2, i, true));
-  [[200, 342], [635, 396], [1000, 254], [1314, 416], [173, 748]].forEach(([x, z], i) =>
-    tree(detail, x, z, 3.8 + (i % 2) * 0.5, i + 10, false));
+  const breezeTime = { value: 0 };
+  addGardenTrees(scene, detail, breezeTime);
   parkedBike(detail, 905, 607, -36, "#843e36", "scooter");
   parkedBike(detail, 918, 606, -32, "#475d50", "scooter");
   parkedBike(detail, 905, 676, -30, "#7a644b", "cycle");
@@ -250,7 +223,6 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   [
     [602, 770, 0],
     [919, 271, Math.PI / 2],
-    [1078, 649, 0],
     [298, 414, 0.2],
   ].forEach(([x, z, yaw]) => {
     const p = sheetPoint(x, z);
@@ -270,6 +242,10 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
     }
   });
   detail.build(scene);
-  const updateFountain = buildEntrance(scene, stone);
+  const updateWater = buildEntrance(scene, stone, breezeTime);
+  function updateFountain(seconds: number) {
+    breezeTime.value = seconds;
+    updateWater(seconds);
+  }
   return { boardOutline, updateFountain, activity: buildMarketActivity(scene, groundUnits, firstUnits) };
 }

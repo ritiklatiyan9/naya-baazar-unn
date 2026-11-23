@@ -4,6 +4,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { FormEvent } from "react";
 import plan from "../src/plan-data.json";
 import PlanCanvas from "./PlanCanvas";
+import { MarketFacts } from "./MarketFacts";
+import { ProjectDetails, MediaView } from "./ProjectFeatures";
 import { Icon } from "./icons";
 import ShopManager, { type BookingStatus as Status, type ShopRecord as Availability } from "./ShopManager";
 
@@ -13,46 +15,23 @@ type Floor = "ground" | "first";
 type Inventory = Record<number, Availability>;
 type Unit = typeof plan[number];
 type User = { email: string };
-type View = "layout" | "model" | "details" | "walkthrough" | "gallery";
+type View = "home" | "layout" | "model" | "details" | "walkthrough" | "gallery";
 const pages: { id: View; label: string; shortLabel: string; icon: string }[] = [
   {id:"layout", label:"Floor plans", shortLabel:"Plans", icon:"plan"},
   {id:"details", label:"Project details", shortLabel:"Project", icon:"shops"},
   {id:"walkthrough", label:"Walkthrough", shortLabel:"Walkthrough", icon:"film"},
-  {id:"gallery", label:"Photos & videos", shortLabel:"Gallery", icon:"image"},
+  {id:"gallery", label:"Gallery", shortLabel:"Gallery", icon:"image"},
 ];
 const compactLayout = "(max-width: 800px)";
 const floorName = (floor: string) => floor === "ground" ? "Ground floor" : "First floor";
 const unitName = (id: number) => "Shop " + String(id).padStart(2, "0");
 const numberText = (feet: string) => feet.replaceAll("'", "′").replaceAll('"', "″");
 const statusLabel = (s?: Status) => s === "available" ? "Available" : s === "booked" ? "Booked" : "Unconfirmed";
-const projectViews = [
-  {id:"08", label:"Market street"}, {id:"10", label:"Aerial perspective"}, {id:"12", label:"Central plaza"}
-];
-
 function Brand() {
-  return <a className="brand" href="#layout" aria-label="Naya Baazar floor plans">
-    <img src="/favicon.svg" alt="" width="43" height="43"/>
-    <span><strong>Naya Baazar</strong><small>BY DEFENCE GARDEN</small></span>
+  return <a className="brand" href="#home" aria-label="Naya Baazar home" onClick={()=>window.scrollTo(0,0)}>
+    <img src="/favicon.svg" alt="" width="44" height="44"/>
+    <span><strong>Naya Baazar</strong><small>By Defence Garden</small></span>
   </a>;
-}
-
-function Hero({view}: {view:View}) {
-  const [index,setIndex] = useState(0);
-  const current = projectViews[index];
-  const explorer = view === "layout" || view === "model";
-  const Title = explorer ? "h1" : "p";
-  const image = "/media/render-" + current.id;
-  return <section className={"hero" + (explorer ? " hero-explorer" : "") + (view === "model" ? " hero-model" : "")} aria-label="Naya Baazar project">
-    <picture><source media="(max-width: 600px)" srcSet={image+"-small.webp"}/><img className="hero-photo" src={image+".webp"} alt={current.label + " of the proposed market"} fetchPriority="high"/></picture>
-    <div className="hero-shade"/>
-    <div className="hero-copy"><p className="hero-kicker"><span/>COMMERCIAL DEVELOPMENT</p>
-      <Title className="hero-title"><span className="desktop-title">Naya Baazar</span><span className="mobile-title">{view === "model" ? "Architectural model" : "Floor plans"}</span></Title>
-      <p className="hero-location"><Icon name="pin" size={17}/><span>Unn, Shamli<span className="state-name">, Uttar Pradesh</span></span></p>
-    </div>
-    <div className="hero-paging"><span>{current.label}</span><div>
-      {projectViews.map((photo, i) => <button key={photo.id} className={i === index ? "active" : ""} onClick={() => setIndex(i)} aria-pressed={i === index} aria-label={"Show " + photo.label}/>)}
-    </div></div>
-  </section>;
 }
 
 function useData() {
@@ -174,7 +153,7 @@ function Directory({floor,inventory,selected,user,onSelect,onBack,onManage,onClo
     {onClose ? <div className="sheet-heading">
       {unit ? <button className="back-link" onClick={onBack}><Icon name="back" size={16}/>Shop directory</button> : <h2 tabIndex={-1}>Shop directory</h2>}
       <button type="button" className="icon-button" aria-label="Close shop directory" onClick={onClose} autoFocus><Icon name="close"/></button>
-    </div> : <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><p className="eyebrow">{user?"STAFF WORKSPACE":"SHOP INVENTORY"}</p><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>}
+    </div> : <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>}
     {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} onBack={onClose ? undefined : onBack} onManage={onManage}/> : <>
       <label className="directory-search"><Icon name="search"/><input aria-label="Find shop by number" placeholder="Find shop by number" value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"/>{query && <button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><Icon name="close" size={15}/></button>}</label>
       <div className="directory-meta"><span>{query.trim()?"Search results":floorName(floor)}</span><span>{filtered.length} {filtered.length===1?"shop":"shops"}</span></div>
@@ -197,39 +176,13 @@ function DirectorySheet({onClose, children}:{onClose:()=>void; children:React.Re
   </dialog>;
 }
 
-function ProjectDetails() {
-  return <section className="details-view"><div className="section-heading"><div><p className="eyebrow">THE DEVELOPMENT</p><h1>Project details</h1></div></div>
-    <div className="details-grid"><figure><img src="/media/render-12.webp" alt="The landscaped central plaza and two levels of shopfronts"/><figcaption>Central plaza · Architectural render</figcaption></figure>
-    <article><p className="eyebrow">UNN, SHAMLI</p><h3>An open-air market around a courtyard.</h3><p>Naya Baazar brings two floors of shops together around a landscaped plaza. Covered walkways connect the shopfronts, with an internal driveway running through the market.</p>
-    <dl className="project-facts"><div><dt>Developer</dt><dd>Defence Garden</dd></div><div><dt>Location</dt><dd>Unn, Shamli, Uttar Pradesh</dd></div><div><dt>Ground floor</dt><dd>108 shops · Nos. 1–108</dd></div><div><dt>First floor</dt><dd>108 shops · Nos. 112–219</dd></div></dl>
-    <a href="https://defencegarden.com/" target="_blank" rel="noreferrer" className="text-link">Visit Defence Garden</a></article></div>
-    <details className="drawing-note"><summary><Icon name="ruler" size={19}/>Drawing notes and source PDF<Icon name="chevron" size={15}/></summary><div><p>Shop sizes show approximate internal enclosing spans, short side first. The dimension register flags irregular shapes. The 3D model follows the drawn shop footprints and uses illustrative heights, finishes and landscaping. The source drawing also flags a boundary labelled 36.00 m that measures about 36.73 m at its stated scale.</p><a className="text-link" href="/plans/naya-baazar-sizes.pdf" download>Download the original drawings and register</a></div></details>
-  </section>;
-}
-
-function MediaView({view}:{view:"gallery"|"walkthrough"}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [failed,setFailed] = useState(false);
-  const [attempt,setAttempt] = useState(0);
-  useEffect(()=>{
-    let active=true;
-    const container=ref.current;
-    setFailed(false);
-    import("../src/gallery.js").then(mod=>{
-      if(active && container) (view==="gallery"?mod.mountGallery:mod.mountWalkthrough)(container);
-    }).catch(()=>{if(active)setFailed(true);});
-    return ()=>{active=false;container?.replaceChildren();};
-  },[view,attempt]);
-  return <div className="media-view">{failed && <p role="status">The media viewer could not load. <button className="text-link" onClick={()=>setAttempt(a=>a+1)}>Retry</button></p>}<div ref={ref}/></div>;
-}
-
 function getView(): View {
   const hash = window.location.hash.slice(1);
-  return hash.split("/")[0] === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "layout";
+  return hash.split("/")[0] === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "home";
 }
 
 export default function ProjectAtlas() {
-  const [view,setView] = useState<View>("layout");
+  const [view,setView] = useState<View>("home");
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
   const [modelDirectory,setModelDirectory] = useState(false);
@@ -238,7 +191,8 @@ export default function ProjectAtlas() {
   const [managerOpen,setManagerOpen] = useState(false);
   const [notice,setNotice] = useState("");
   const {inventory,network,merge,refresh,user,changeUser,sessionReady} = useData();
-  const inLayout = view === "layout" || view === "model";
+  const onHome = view === "home";
+  const inLayout = onHome || view === "layout" || view === "model";
   const statuses = useMemo(()=>Object.fromEntries(Object.values(inventory).map(r=>[r.id,r.status])) as Record<number,Status>,[inventory]);
   useEffect(()=>{
     let previous: View | null = null;
@@ -288,7 +242,7 @@ export default function ProjectAtlas() {
     setManagerOpen(false);
     select(id, false);
     if(view==="model" && !window.matchMedia(compactLayout).matches) setModelDirectory(true);
-    if (!inLayout) window.location.hash = "layout";
+    if (onHome || !inLayout) window.location.hash = "layout";
     window.requestAnimationFrame(() => document.querySelector(".explorer-grid")?.scrollIntoView({block:"start"}));
   }
   async function logout(){
@@ -298,22 +252,52 @@ export default function ProjectAtlas() {
   const directoryProps = {floor, inventory, selected, user, onSelect:select, onBack:()=>setSelected(null), onManage:openManagement};
   return <>
     <a className="skip" href="#main-content" onClick={e=>{e.preventDefault();document.getElementById("main-content")?.focus();}}>Skip to content</a>
-    <header className="site-header"><div className="header-inner"><Brand/>
-      <nav className="main-nav" aria-label="Project navigation">{pages.map(p=><a key={p.id} href={"#"+p.id} aria-label={p.label} aria-current={view===p.id || (inLayout && p.id==="layout")?"page":undefined}>
-        <span className="mobile-nav-icon"><Icon name={p.icon} size={21}/></span><span className="desktop-nav-label">{p.label}</span><span className="mobile-nav-label">{p.shortLabel}</span>
-      </a>)}</nav>
-      <div className="header-actions"><a className="enquiry" href="tel:+919917665577">Shop enquiries</a>
-        <button type="button" className="header-manage" onClick={openManagement} aria-haspopup="dialog"><Icon name={user?"shops":"lock"} size={16}/>Manage shops</button>
+    <header className="site-header">
+      <div className="header-frame">
+        <div className="header-inner">
+          <Brand/>
+          <nav className="main-nav" aria-label="Project navigation">
+            {pages.map(page => <a key={page.id} href={"#" + page.id} aria-label={page.label}
+              aria-current={view === page.id || (inLayout && page.id === "layout") ? "page" : undefined}>
+              <span className="mobile-nav-icon"><Icon name={page.icon} size={19}/></span>
+              <span className="desktop-nav-label">{page.label}</span>
+              <span className="mobile-nav-label">{page.shortLabel}</span>
+            </a>)}
+          </nav>
+          <div className="header-actions">
+            <button type="button" className="header-manage" onClick={openManagement} aria-haspopup="dialog" title="Manage shops">
+              <Icon name={user ? "shops" : "lock"} size={16}/><span>Manage shops</span>
+            </button>
+            <a className="enquiry" href="tel:+919917665577" title="Enquire by phone">
+              <span className="enquiry-label">Enquire</span>
+              <span className="enquiry-icon"><Icon name="phone" size={15}/></span>
+            </a>
+          </div>
+        </div>
       </div>
-      </div></header>
-    <main id="main-content" tabIndex={-1} className="page-wrap">{(!compact || inLayout) && <Hero view={view}/>}
+    </header>
+    <main id="main-content" tabIndex={-1} className="atlas-main">
+      <div className={onHome ? "page-wrap landing-page" : "page-wrap"}>
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
-      {inLayout && <section className="layout-view"><div className="section-heading explorer-heading">
-        <div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>{view==="model"?"Architectural model":"Floor plan explorer"}</h2><p className="intro">{view==="model"?"Explore the courtyard and shopfronts, or select a shop for its dimensions.":"Select a shop to explore its dimensions and availability."}</p></div>
-        <div className="explorer-actions"><nav className="mode-switch" aria-label="Layout view">
-          <a href="#layout" aria-current={view==="layout"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
-          <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>
-        </nav><a className="outline-button download" aria-label="Download floor plan PDF" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/><span className="download-full">Download plan</span><span className="download-short">PDF</span></a></div>
+      {inLayout && <section className="layout-view" aria-labelledby="layout-heading"><div className="section-heading explorer-heading">
+        <div>
+          <p className="eyebrow section-kicker"><span aria-hidden="true"/>{onHome ? "Unn, Shamli" : "The shop directory"}</p>
+          <h1 id="layout-heading">{view === "model" ? "Architectural model" : "Floor plan explorer"}</h1>
+          <p className="intro">{view === "model" ? "Explore the courtyard and shopfronts, or select a shop for its dimensions." : "Select a shop to explore its dimensions and availability."}</p>
+        </div>
+        <div className="explorer-actions">
+          {onHome && <a className="model-launch" href="#model">
+            <span className="model-launch-icon"><Icon name="cube" size={24}/></span>
+            <span>Explore 3D model</span>
+          </a>}
+          <nav className="mode-switch" aria-label="Layout view">
+            <a href="#layout" aria-current={view!=="model"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
+            {!onHome && <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>}
+          </nav>
+          <a className="outline-button download" aria-label="Download floor plan PDF" href="/plans/naya-baazar-sizes.pdf" download>
+            <Icon name="down" size={16}/><span className="download-full">Download plan</span><span className="download-short">PDF</span>
+          </a>
+        </div>
       </div>
         {network==="error" && <div className="offline" role="status"><Icon name="info"/><span>{Object.keys(inventory).length?"Availability could not refresh. Showing the last received update.":"Shop availability is temporarily unavailable. You can still explore the plans and dimensions."}</span><button onClick={()=>void refresh()}>Retry</button></div>}
         <div className={"explorer-grid" + (view==="model" && !modelDirectory?" model-wide":"")}>
@@ -323,7 +307,7 @@ export default function ProjectAtlas() {
               </Suspense>
             : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
           <div id="layout-directory" className="directory-wrap" hidden={view==="model" && !modelDirectory}>
-            {!compact && (view==="layout" || modelDirectory) && <Directory {...directoryProps}/>}
+            {!compact && (view!=="model" || modelDirectory) && <Directory {...directoryProps}/>}
           </div>
         </div>
         <button type="button" className="mobile-shop-search" aria-haspopup="dialog" onClick={()=>{setSelected(null);setDirectorySheet(true);}}>
@@ -335,6 +319,8 @@ export default function ProjectAtlas() {
       </section>}
       {view==="details" && <ProjectDetails/>}
       {(view==="gallery" || view==="walkthrough") && <MediaView view={view}/>}
+      </div>
+      {onHome && <MarketFacts shopCount={plan.length}/>}
     </main>
     <footer className="site-footer"><div><img src="/favicon.svg" alt="" width="24" height="24"/><span>Naya Baazar <b>·</b> Defence Garden</span></div><button className="staff-login" onClick={()=>user?void logout():openManagement()}><Icon name={user?"logout":"lock"} size={13}/>{user?"Staff sign out":"Staff login"}</button></footer>
     {managerOpen && !sessionReady && <div className="session-loading" role="status">Checking staff session…</div>}

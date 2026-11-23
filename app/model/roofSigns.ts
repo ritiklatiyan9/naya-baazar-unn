@@ -84,9 +84,13 @@ export function addRoofSigns(group: T.Group, units: Unit[], deck: number) {
   });
   hardware.build(group);
   if (!faces.length) return;
-  const print = new T.Mesh(mergeGeometries(faces)!, new T.MeshStandardMaterial({
-    map: lettering(), roughness: 0.86,
-  }));
+  const map = lettering();
+  // The boards are backlit after dark.
+  const material = new T.MeshStandardMaterial({
+    map, emissiveMap: map, emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.86,
+  });
+  const print = new T.Mesh(mergeGeometries(faces)!, material);
+  print.userData.night = (on: boolean) => { material.emissiveIntensity = on ? 0.85 : 0; };
   print.name = "Rooftop district signs";
   group.add(print);
   faces.forEach(face => face.dispose());

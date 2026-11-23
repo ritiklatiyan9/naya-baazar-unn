@@ -96,7 +96,7 @@ export function shopperPortraits(){
   return {material,ready};
 }
 
-export type Garment="linen"|"shirt"|"tunic"|"denim"|"hair";
+export type Garment="workwear"|"linen"|"shirt"|"tunic"|"denim"|"hair";
 export function clothTexture(style:Garment){
   const c=document.createElement("canvas");c.width=c.height=256;
   const ctx=c.getContext("2d")!,w=c.width;
@@ -125,6 +125,27 @@ export function clothTexture(style:Garment){
     ctx.beginPath();ctx.lineWidth=width;ctx.strokeStyle=colour;
     points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
   }
+  if (style === "workwear") {
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "#e19239";
+    ctx.fillRect(0, 0, w, w);
+    ctx.globalCompositeOperation = "source-over";
+    // The navy undershirt shows through the V of the waistcoat at the neck.
+    ctx.fillStyle = "#324450";
+    ctx.beginPath();
+    ctx.moveTo(109, 0); ctx.lineTo(129, 64); ctx.lineTo(148, 0); ctx.fill();
+    for (const x of [20, 105, 151, 236]) {
+      line([[x, 0], [x + (x > 127 ? 3 : -3), 145]], "#d7d8be", 8);
+    }
+    for (const y of [143, 165]) {
+      ctx.fillStyle = "#c9ccb8";
+      ctx.fillRect(0, y, w, 10);
+      line([[0, y + 1], [w, y + 1]], "#f2efd6");
+    }
+    line([[129, 61], [129, 251]], "#645d50", 2);
+    line([[98, 196], [112, 208], [111, 227]], "#96652f", 2);
+    line([[160, 196], [147, 208], [147, 227]], "#96652f", 2);
+  }
   if(style==="shirt"||style==="tunic"){
     const end=style==="shirt"?250:89;
     line([[125,15],[125,end]],"rgba(28,24,21,.26)",2);
@@ -149,9 +170,9 @@ export function clothTexture(style:Garment){
 
 export function garmentGeometry(hem:boolean) {
   const rings=hem?[
-    [-.171,.201,.165],[-.159,.202,.162],[-.102,.195,.143],[-.01,.188,.121],[.12,.162,.104],
+    [-.182,.215,.208],[-.174,.214,.205],[-.109,.208,.169],[-.038,.196,.143],[.031,.184,.121],[.12,.162,.104],
   ]:[
-    [-.067,.184,.119],[-.052,.186,.119],[-.016,.178,.112],[.048,.176,.108],[.125,.167,.106],
+    [-.051,.192,.138],[-.041,.193,.139],[-.007,.185,.129],[.048,.177,.115],[.125,.167,.106],
     [.210,.157,.105],[.285,.164,.114],[.345,.183,.122],[.386,.194,.116],
     [.402,.201,.106],[.424,.189,.093],[.446,.157,.079],[.467,.116,.067],[.486,.059,.054],
   ];
@@ -161,5 +182,21 @@ export function garmentGeometry(hem:boolean) {
     const fabric=.0038*Math.cos(11*a+v*2)*(1-v)+.0025*Math.sin(17*a-v*3)*(1-v);
     const p=new T.Vector3(Math.sin(a)*(rx+fabric),y,Math.cos(a)*(rz+fabric)+.006*Math.sin(v*Math.PI));
     return {p,u,v:(y-rings[0][0])/(rings[rings.length-1][0]-rings[0][0])};
+  });
+}
+
+export function apronGeometry() {
+  // The bib narrows above the waistband. The lower apron follows the front of the hips.
+  const sections = [
+    [-.201,.186,.236,.179],[-.192,.188,.236,.18],[-.085,.181,.235,.155],
+    [.023,.176,.221,.144],[.12,.159,.207,.123],[.144,.144,.204,.12],
+    [.245,.104,.20,.128],[.358,.111,.203,.145],[.388,.108,.206,.140],
+  ];
+  return surface(sections.length - 1, 18, (u, v) => {
+    const [y, width, torsoWidth, depth] = sections[Math.round(v * (sections.length - 1))];
+    const x = (u * 2 - 1) * width;
+    const fold = .0038 * Math.cos(u * 21) * (1 - v);
+    const z = depth * Math.sqrt(1 - (x / torsoWidth) ** 2) + fold;
+    return { p: new T.Vector3(x,y,z), u, v };
   });
 }

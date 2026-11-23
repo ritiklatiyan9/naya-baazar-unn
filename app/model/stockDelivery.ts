@@ -1,47 +1,57 @@
 import * as T from "three";
 import { sheetPoint, type Unit } from "./geometry";
-import { retailBays, glassSetback, shopEntrance, shopFloorHeight } from "./retailFrontages";
+import { retailBays, displayDepth, glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
 import { wingBoundaries } from "./wings";
-import { deliveryPickup, stockCarton } from "./marketVehicles";
-import { assemble, box } from "./vehicleGeometry";
+import { deliveryPickup, stockContainer, type DeliveryBody } from "./marketVehicles";
+import { assemble, box, part } from "./vehicleGeometry";
 import type { PersonPose } from "./shoppers";
 
 const v3 = (p:T.Vector2, y:number) => new T.Vector3(p.x,y,p.y);
 const ease = (t:number) => T.MathUtils.smootherstep(t,0,1);
 const angle = (a:number,b:number,t:number) => a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*ease(t);
 
-/** One load and its receiving shelf share the same four cartons throughout a visit. */
-export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Material, trafficPeriod:number) {
-  const near = sheetPoint(875,365);
-  const bay = retailBays(wingBoundaries[0],units).filter(b => b.width>2.6)
-    .sort((a,b)=>a.at(0,0).distanceToSquared(near)-b.at(0,0).distanceToSquared(near))[0];
-  if (!bay || bay.at(0,0).distanceTo(near)>5) return;
-
+/** Each crew moves the same cartons from its truck, through its shop door, onto its shelves. */
+function deliveryCrew(parent:T.Group, bay:RetailBay, body:DeliveryBody, startOffset:number, shadowMaterial:T.Material, trafficPeriod:number) {
   const serviceShopId=bay.id, jamb=shopEntrance(bay.width).center, glass=glassSetback.ground;
   const door=v3(bay.at(jamb,glass),shopFloorHeight.ground);
-  const {group:pickup,gate,wheels}=deliveryPickup(parent,shadowMaterial);
-  const berth=new T.Vector3(sheetPoint(864.45,365).x,.033,door.z+2.7);
-  const tail=berth.clone().add(new T.Vector3(.03,0,-2.55));
-  const destination=v3(bay.at(jamb,glass+1.23),shopFloorHeight.ground);
+  const {group:pickup,closeCargo,wheels}=deliveryPickup(parent,shadowMaterial,body);
+  const parkedHeading=Math.PI;
+  // Leave the tail a short distance upstream so staff clear the tailgate before
+  // turning towards the entrance with the crate in both hands.
+  const berth=new T.Vector3(sheetPoint(866.9,0).x,.033,door.z-3.78);
+  const tail=berth.clone().add(new T.Vector3(.03,0,2.53));
+  // The receiving shelves stand against the rear wall, further in where the room is deeper.
+  const deeper=bay.depth-displayDepth;
+  const destination=v3(bay.at(jamb,glass+deeper+1.23),shopFloorHeight.ground);
   const path=new T.CatmullRomCurve3([
-    tail, tail.clone().add(new T.Vector3(.38,0,-.18)),
-    v3(bay.at(jamb,-.22),.111), v3(bay.at(jamb,.28),shopFloorHeight.ground),
+    tail, tail.clone().add(new T.Vector3(.25,0,.36)),
+    v3(bay.at(jamb-.29,-.22),.111), v3(bay.at(jamb-.06,.28),shopFloorHeight.ground),
     door, destination,
   ]);
-  const length=path.getLength(), walkTime=length/1.06+.55;
+  // Crews cover the extra floor of a deeper room in the same time, so every trip keeps its cue in the walkthrough.
+  const length=path.getLength(), walkTime=(length-deeper)/1.06+.55;
   const tangent=new T.Vector3(), point=new T.Vector3();
   const endTangent=path.getTangent(1), homeHeading=Math.atan2(endTangent.x,endTangent.z);
   const firstTangent=path.getTangent(0), depart=Math.atan2(firstTangent.x,firstTangent.z);
 
-  // Rearward gravity rollers and side guides allow one carton at a time to reach the tailgate.
+  // Rearward gravity rollers between side channels allow one carton at a time to reach the tailgate.
   const fittings:T.BufferGeometry[]=[];
-  for(let i=0;i<13;i++) box(fittings,"#adb3a4",0,.736,-.04-i*.145,1.29,.043,.058);
-  for(const side of [-1,1]) box(fittings,"#879085",side*.66,.774,-.94,.04,.075,1.94);
-  assemble(pickup,fittings,{roughness:.65,metalness:.18});
+  for(let i=0;i<13;i++) part(fittings,new T.CylinderGeometry(.021,.021,1.27,10).rotateZ(Math.PI/2),"#b4b9b5",0,.746,-.04-i*.145);
+  for(const side of [-1,1]) box(fittings,"#879085",side*.66,.756,-.94,.04,.08,1.94);
+  assemble(pickup,fittings,{roughness:.45,metalness:.55});
 
-  const template=stockCarton(), parcels:T.Group[]=[];
+  const markings:T.BufferGeometry[]=[];
+  for (const x of [-.99,.99]) for (const z of [-2.58,2.58]) {
+    box(markings,"#d2ab66",x,.046,z-Math.sign(z)*.30,.075,.008,.66);
+    box(markings,"#d2ab66",x-Math.sign(x)*.23,.046,z,.5,.008,.075);
+  }
+  const stand=new T.Group(); stand.name="Loading bay · Shop "+bay.id;
+  stand.position.set(berth.x,0,berth.z); parent.add(stand); assemble(stand,markings,{roughness:.98});
+
+  const template=stockContainer(body), parcels:T.Group[]=[];
   const load:T.Vector3[]=[], shelf:T.Vector3[]=[];
   const cabinet=new T.Group();
+  cabinet.name="Shop "+bay.id+" · receiving shelves";
   parent.add(cabinet); cabinet.position.copy(destination); cabinet.rotation.y=homeHeading;
   const shelves:T.BufferGeometry[]=[];
   box(shelves,"#a78767",0,.56,.67,1.06,.07,.54);
@@ -56,22 +66,24 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
   assemble(shutter,slats,{roughness:.76});
   for(let i=0;i<4;i++){
     const carton=i===0?template:template.clone();
-    carton.name="Delivery carton "+(i+1); parent.add(carton); parcels.push(carton);
-    load.push(new T.Vector3((i%2-.5)*.57,.917,-1.29+Math.floor(i/2)*.77));
+    carton.name="Shop "+bay.id+" · load "+(i+1); parent.add(carton); parcels.push(carton);
+    load.push(new T.Vector3(0,.917,-1.67+i*.46));
     const p=new T.Vector3((i%2-.5)*.49,i<2?.747:1.122,.665);
     shelf.push(cabinet.localToWorld(p));
   }
 
-  // The empty pickup turns in the clear straight section, leaves at the northern entrance,
-  // and returns loaded in the inbound lane. Stock changes while the vehicle is off site.
+  // Leave via the northern gate. The loaded vehicle returns southbound and turns back
+  // towards its berth in the clear road beyond both loading bays.
   const road=(x:number,z:number)=>v3(sheetPoint(x,z),berth.y);
   const outbound=new T.CatmullRomCurve3([berth,
-    berth.clone().add(new T.Vector3(-.09,0,1.39)), road(856.8,420),road(847,429),
-    road(833,432),road(820,426),road(814,411),road(812,379),road(812,320),
-    road(812,245),road(812,195),road(815,161),road(817,150)]);
-  const inbound=new T.CatmullRomCurve3([road(847,150),road(847,190),road(846,248),
-    road(846,278),road(849,304),road(856,329),road(862,351),
-    berth.clone().add(new T.Vector3(0,0,-1.65)),berth]);
+    berth.clone().add(new T.Vector3(-.10,0,-1.25)),
+    new T.Vector3(road(844,0).x,berth.y,berth.z-4.4),
+    new T.Vector3(road(814,0).x,berth.y,berth.z-8.4),
+    road(812,174),road(815,160),road(817,150)]);
+  const inbound=new T.CatmullRomCurve3([road(834,150),road(832,224),road(828,322),
+    road(821,399),road(820,423),road(826,440),road(842,447),road(854,439),road(852,416),
+    new T.Vector3(road(844,0).x,berth.y,berth.z+5.6),
+    berth.clone().add(new T.Vector3(-.15,0,1.6)),berth]);
   const outLength=outbound.getLength(), inLength=inbound.getLength();
   const parcelStart=new T.Vector3(), travelTarget=new T.Vector3(), grip=new T.Vector3();
   const pose:PersonPose={x:0,z:0,floorY:0,heading:0,stride:0,walking:0,browsing:0,time:0};
@@ -79,14 +91,16 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
   const visit=walkTime*2+align+lift+stow+turn;
   const dispatch=visit*4+.55, awaySpeed=2.60;
   const outDuration=outLength/awaySpeed+1, inDuration=inLength/awaySpeed+1;
-  const loadReady=trafficPeriod-inDuration;
+  const period=Math.max(trafficPeriod,dispatch+outDuration+inDuration+4);
+  const loadReady=period-inDuration;
   const edge=sheetPoint(830,150).y;
-  const truckMaterials=new Set<T.Material>();
+  // Each material fades from its own opacity, so the see-through cab glass stays see-through.
+  const truckMaterials=new Map<T.Material,number>();
   const shadowFade=shadowMaterial.clone();
   pickup.traverse(child=>{
     if(!(child instanceof T.Mesh))return;
     if(child.material===shadowMaterial) child.material=shadowFade;
-    truckMaterials.add(child.material as T.Material);
+    truckMaterials.set(child.material as T.Material,(child.material as T.Material).opacity);
   });
   const cartonMaterial=(template.children[0] as T.Mesh).material as T.Material;
   function fade(material:T.Material,opacity:number) {
@@ -100,7 +114,7 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
   }
   function drive(clock:number) {
     let opacity=1, mileage=0;
-    pickup.visible=true; pickup.position.copy(berth); pickup.rotation.y=0;
+    pickup.visible=true; pickup.position.copy(berth); pickup.rotation.y=parkedHeading;
     if(clock>=dispatch){
       const leaving=clock<dispatch+outDuration;
       const arriving=clock>=loadReady;
@@ -117,9 +131,9 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
         opacity=ease((pickup.position.z-edge)/2.9);
       }else{pickup.visible=false;opacity=0;}
     }
-    gate.rotation.x=Math.PI*.5*Math.max(1-ease(clock/1.5),ease((clock-dispatch+1.30)/1.30));
+    closeCargo(Math.max(1-ease(clock/2.2),ease((clock-dispatch+2.20)/2.20)));
     for(const w of wheels) w.rotation.x=mileage/.29;
-    for(const material of truckMaterials) fade(material,opacity);
+    for(const [material,base] of truckMaterials) fade(material,opacity*base);
     fade(cartonMaterial,clock>=loadReady?opacity:1);
     return opacity;
   }
@@ -133,13 +147,13 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
     pose.walking=T.MathUtils.clamp(Math.min(t,walkTime-t)/ramp,0,1);
     pose.stride=(reverse?length+d:d)*Math.PI*2/1.38;
   }
-  function update(time:number,openDoors:Set<number>) {
-    // Start beside the tailgate with the first carton in hand.
-    const clock=T.MathUtils.euclideanModulo(time+walkTime+align+lift-.45,trafficPeriod);
+  function update(time:number,openDoors:Set<number>,deliveryTime?:number) {
+    const offset=walkTime+align+lift-.45+startOffset;
+    const clock=T.MathUtils.euclideanModulo((deliveryTime??time)+offset,period);
     const opacity=drive(clock);
     const trip=Math.min(4,Math.floor(clock/visit)), phase=clock-trip*visit;
     const restocked=clock>=loadReady;
-    const shutterHeight=clock<dispatch?0:Math.min(ease((clock-dispatch)/1.6),ease((trafficPeriod-clock)/1.6));
+    const shutterHeight=clock<dispatch?0:Math.min(ease((clock-dispatch)/1.6),ease((period-clock)/1.6));
     shutter.scale.y=Math.max(.001,shutterHeight);
     let carry=0,crouch=0,fromBed=0,toShelf=0;
     point.copy(destination);
@@ -149,11 +163,11 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
       if(t<walkTime){
         walk(t,true);
       }else if((t-=walkTime)<align){
-        point.copy(tail); pose.heading=angle(depart+Math.PI,0,t/align);
+        point.copy(tail); pose.heading=angle(depart+Math.PI,parkedHeading,t/align);
       }else if((t-=align)<lift){
         point.copy(tail);
         const reach=ease(t/.84),take=ease((t-.83)/1.10);
-        pose.heading=angle(0,depart,(t-1.84)/.86);
+        pose.heading=angle(parkedHeading,depart,(t-1.84)/.86);
         carry=reach;crouch=.69*(1-take)*reach;
         fromBed=ease(t/1.55);
       }else if((t-=lift)<walkTime){
@@ -175,22 +189,35 @@ export function stockDelivery(parent:T.Group, units:Unit[], shadowMaterial:T.Mat
     pose.carrying=carry;pose.crouch=crouch;
     if(trip<4 && point.distanceToSquared(door)<2.35**2)openDoors.add(serviceShopId);
     grip.set(point.x+Math.sin(pose.heading)*.32,point.y+.99-crouch*.22+pose.walking*.012*Math.sin(pose.stride*2),point.z+Math.cos(pose.heading)*.32);
+    // Roll the next carton into reach once the worker has cleared the tailgate.
+    const advanced=restocked ? 0 : trip+ease((phase-walkTime-align-lift-.12)/1.15);
     for(const [i,carton] of parcels.entries()){
       const onTruck=restocked || i>trip || (i===trip && fromBed===0);
       carton.visible=true;
       if(onTruck){
-        travelTarget.copy(load[i]).applyAxisAngle(up,pickup.rotation.y).add(pickup.position);
+        travelTarget.copy(load[i]); travelTarget.z-=advanced*.46;
+        travelTarget.applyAxisAngle(up,pickup.rotation.y).add(pickup.position);
         carton.position.copy(travelTarget);carton.rotation.y=pickup.rotation.y;
         carton.visible=pickup.visible && opacity>.001;
       }else if(i<trip){
         carton.position.copy(shelf[i]);carton.rotation.y=homeHeading;
       }else{
-        parcelStart.copy(load[i]).add(berth);
+        parcelStart.copy(load[0]).applyAxisAngle(up,parkedHeading).add(berth);
         carton.position.copy(parcelStart).lerp(grip,fromBed).lerp(shelf[i],toShelf);
-        carton.rotation.y=angle(angle(0,pose.heading,fromBed),homeHeading,toShelf);
+        carton.rotation.y=angle(angle(parkedHeading,pose.heading,fromBed),homeHeading,toShelf);
       }
     }
   }
   return {id:serviceShopId,pose,update};
 }
 const up=new T.Vector3(0,1,0);
+
+export function stockDeliveries(parent:T.Group, units:Unit[], shadowMaterial:T.Material, trafficPeriod:number) {
+  const bays=retailBays(wingBoundaries[0],units,"ground");
+  // The crews lift in sequence as the lens moves from Kiln's flatbed to Thread's box truck.
+  const stops=[{id:67,body:"flatbed",offset:6.3}, {id:69,body:"box truck",offset:13.1}] as const;
+  return stops.flatMap(stop=>{
+    const bay=bays.find(candidate=>candidate.id===stop.id);
+    return bay ? [deliveryCrew(parent,bay,stop.body,stop.offset,shadowMaterial,trafficPeriod)] : [];
+  });
+}

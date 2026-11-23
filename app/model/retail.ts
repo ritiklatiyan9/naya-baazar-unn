@@ -1,10 +1,12 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Floor, Unit } from "./geometry";
+import { checkoutDepth, checkoutTop, shopCheckout } from "./shopCheckouts";
 import { cafeShopIds } from "./marketPlaces";
 import { displayCount, displayDepth, shelfWidth, glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
 import { facadeFinish } from "./siteMaterials";
 import { shellBoundaries, wingBoundaries } from "./wings";
+import { floristBloom, floristLeaf, hangingShirt } from "./merchandiseGeometry";
 
 const themes = [
   { name: "THREAD", sub: "CLOTHING ATELIER", sign: "#713c38", wall: "#d1ad9a", accent: "#7e4d45", trim: "#ceae83" },
@@ -81,36 +83,60 @@ class Faces {
   }
 }
 
-function shirtShape() {
-  const shape = new T.Shape();
-  const outline = [[-.15,.32],[-.25,.29],[-.41,.10],[-.31,.015],[-.245,.09],[-.21,-.31],[.23,-.31],[.245,.09],[.31,.015],[.41,.10],[.25,.29],[.15,.32],[.09,.23],[-.09,.23]];
-  outline.forEach(([x,y],i)=>i ? shape.lineTo(x,y) : shape.moveTo(x,y));
-  shape.closePath();
-  return new T.ExtrudeGeometry(shape, {depth:.06,bevelEnabled:false});
+// Revolve the inner lip as well as the outside so vessels still read as hollow
+// from the eye-level walkthrough, especially on the lower shelves.
+function thrownPot(profile: number[][]) {
+  const geometry = new T.LatheGeometry(profile.map(([r,h]) => new T.Vector2(r, h - .5)), 18);
+  const positions = geometry.getAttribute("position");
+  const colors = new Float32Array(positions.count * 3);
+  for (let i = 0; i < positions.count; i++) {
+    const h = positions.getY(i) + .5;
+    const shade = h < .09 ? .67 : .945 + .035 * Math.cos(h * 70);
+    colors.set([shade, shade * .99, shade * .97], i * 3);
+  }
+  geometry.setAttribute("color", new T.BufferAttribute(colors, 3));
+  return geometry;
 }
 const forms = {
   box: () => new T.BoxGeometry(1,1,1),
   lamp: () => new T.BoxGeometry(1,1,1),
   round: () => new T.SphereGeometry(.5,10,6),
-  vase: () => new T.LatheGeometry([[.20,0],[.28,.05],[.43,.24],[.45,.50],[.29,.75],[.18,.85],[.18,1],[.13,1],[.13,.92]].map(([r,h]) => new T.Vector2(r,h-.5)), 10),
+  vase: () => thrownPot([[.20,0],[.24,.06],[.40,.23],[.46,.44],[.41,.60],[.23,.78],[.15,.87],[.15,.97],[.18,.99],[.175,1],[.115,.99],[.115,.91],[0,.70]]),
+  bowl: () => thrownPot([[.18,0],[.21,.09],[.20,.18],[.32,.32],[.43,.58],[.50,.91],[.50,.98],[.47,1],[.45,.92],[.38,.62],[.27,.39],[.13,.29],[0,.27]]),
   cylinder: () => new T.CylinderGeometry(.5,.5,1,12),
   shade: () => new T.CylinderGeometry(.21,.5,1,12),
-  shirt: shirtShape,
+  shirt: hangingShirt,
+  leaf: floristLeaf,
+  bloom: floristBloom,
 };
 type Form = keyof typeof forms;
+// After dark the shop lighting lifts every interior surface in proportion to its own colour.
+function litAfterDark(material: T.MeshStandardMaterial, glow: T.IUniform<number>) {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.shopGlow = glow;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float shopGlow;")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * shopGlow;");
+  };
+  return material;
+}
 class Fixtures {
   pieces = new Map<Form, { m: T.Matrix4; c: T.Color }[]>();
-  put(form: Form, color: string, center: Vec, width: number, height: number, depth: number, yaw=0, lean=0) {
-    const q = new T.Quaternion().setFromEuler(new T.Euler(0,yaw,lean,"YXZ"));
+  put(form: Form, color: string, center: Vec, width: number, height: number, depth: number, yaw=0, lean=0, pitch=0) {
+    const q = new T.Quaternion().setFromEuler(new T.Euler(pitch,yaw,lean,"YXZ"));
     const m = new T.Matrix4().compose(center,q,new T.Vector3(width,height,depth));
     const entry = this.pieces.get(form) ?? [];
     entry.push({m,c:new T.Color(color)});
     this.pieces.set(form,entry);
   }
-  add(group: T.Group) {
-    const standard = new T.MeshStandardMaterial({roughness:.68,metalness:.09});
+  add(group: T.Group, glow: T.IUniform<number>) {
+    const standard = litAfterDark(new T.MeshStandardMaterial({roughness:.68,metalness:.09}), glow);
+    const glaze = litAfterDark(new T.MeshStandardMaterial({vertexColors:true, roughness:.27}), glow);
+    const matte = litAfterDark(new T.MeshStandardMaterial({vertexColors:true, roughness:.92, side:T.DoubleSide}), glow);
     for (const [form,instances] of this.pieces) {
-      const material = form === "lamp" ? new T.MeshBasicMaterial({toneMapped:false}) : standard;
+      const material = form === "lamp" ? new T.MeshBasicMaterial({toneMapped:false}) :
+        form === "vase" || form === "bowl" ? glaze :
+        form === "shirt" || form === "leaf" || form === "bloom" ? matte : standard;
       const mesh = new T.InstancedMesh(forms[form](),material,instances.length);
       mesh.name = "Retail " + form;
       instances.forEach(({m,c},i) => { mesh.setMatrixAt(i,m); mesh.setColorAt(i,c); });
@@ -123,6 +149,7 @@ function glazing() {
   // Angle-dependent sky and horizon reflections, with enough transmission to see the display behind each pane.
   const material = new T.ShaderMaterial({
     side:T.DoubleSide, transparent:true, depthWrite:false,
+    uniforms: { night: { value: 0 } },
     vertexShader: `
       varying vec3 vWorld; varying vec3 vNormal;
       void main() {
@@ -135,15 +162,18 @@ function glazing() {
         gl_Position=projectionMatrix*viewMatrix*w;
       }`,
     fragmentShader: `
+      uniform float night;
       varying vec3 vWorld; varying vec3 vNormal;
       void main() {
         vec3 v=normalize(cameraPosition-vWorld); vec3 n=normalize(vNormal);
         float fresnel=pow(1.0-abs(dot(v,n)),3.0);
         vec3 r=reflect(-v,n);
         float skylight=smoothstep(-.16,.38,r.y);
-        float streak=smoothstep(.94,1.0,cos(13.0*r.x+7.0*r.z+1.9*r.y))*skylight;
+        float streak=smoothstep(.94,1.0,cos(13.0*r.x+7.0*r.z+1.9*r.y))*skylight*(1.0-night);
         vec3 tint=mix(vec3(.15,.24,.23),vec3(.68,.82,.85),skylight);
-        gl_FragColor=vec4(tint,.085+.30*fresnel+.10*streak);
+        // After dark the panes only catch a faint reflection of the night sky.
+        tint=mix(tint,mix(vec3(.008,.011,.02),vec3(.03,.04,.07),skylight),night);
+        gl_FragColor=vec4(tint,(.085+.30*fresnel+.10*streak)*(1.0-.45*night));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -152,7 +182,7 @@ function glazing() {
   return material;
 }
 
-type Arrangement = (form:Form, color:string, x:number, y:number, depth:number, width:number, height:number, zsize:number, turn?:number, lean?:number) => void;
+type Arrangement = (form:Form, color:string, x:number, y:number, depth:number, width:number, height:number, zsize:number, turn?:number, lean?:number, pitch?:number) => void;
 const pottery = ["#d6c7ae","#af7455","#6b938b","#dfbb84","#85716b"];
 const cloth = ["#c6a66a","#778a85","#eee0bf","#885848","#566579","#c49588"];
 const spines = ["#ae6548","#e3c68e","#566b70","#7d8a66","#b89175","#6f544b","#aab7ab"];
@@ -161,14 +191,17 @@ function merchandise(place: Arrangement, theme:number, span:number, variation:nu
   const w = shelfWidth(span);
   const rack = "#6e5843", brass = "#b19a70";
   switch (theme) {
-    case 0: { // Apparel rail with silhouetted sleeves, necklines and shoes on the plinth.
+    case 0: { // Garments hang at slightly different angles along the brass rail.
       place("box",rack,0,.13,1.94,w+.1,.18,.57);
       place("box",brass,0,1.94,1.96,w,.045,.045);
       for (const x of [-w*.48,w*.48]) place("box",brass,x,1.0,1.96,.04,1.85,.04);
       for (let i=0;i<5;i++) {
         const x=(i-2)*w*.18;
-        place("box",brass,x,1.81,1.93,.022,.20,.025);
-        place("shirt",cloth[(i+variation)%cloth.length],x,1.4,1.92,.60,1.18,.9,i===2?.12:.54);
+        const turn = .18 + ((i+variation)%3)*.16;
+        place("cylinder",brass,x,1.856,1.95,.012,.17,.012);
+        for(const side of [-1,1])
+          place("box","#ab7951",x+side*.065*Math.cos(turn),1.75,1.95-side*.065*Math.sin(turn),.15,.020,.022,turn,-side*.29);
+        place("shirt",cloth[(i+variation)%cloth.length],x,1.39,1.95,.60,1.18,.9,turn);
       }
       break;
     }
@@ -190,7 +223,16 @@ function merchandise(place: Arrangement, theme:number, span:number, variation:nu
         place("box",rack,0,y,1.98,w,.055,.47);
         for(let i=0;i<4;i++){
           const h=.24+((i+variation+row)%3)*.10;
-          place("vase",pottery[(variation+i+row)%5],(i-1.5)*w*.235,y+h/2+.032,1.94,.23+(i%2)*.07,h,.23+(i%2)*.07);
+          const x = (i-1.5)*w*.235;
+          const tint = pottery[(variation+i+row)%pottery.length];
+          if ((variation+i+row)%3 === 0) {
+            const diameter = Math.min(.29, w * .22);
+            place("bowl",tint,x,y+.095,1.94,diameter,.13,diameter);
+            place("bowl",tint,x,y+.132,1.94,diameter*.97,.13,diameter*.97);
+          } else {
+            const diameter = Math.min(.23+(i%2)*.06, w*.21);
+            place("vase",tint,x,y+h/2+.032,1.94,diameter,h,diameter);
+          }
         }
       }
       break;
@@ -205,17 +247,23 @@ function merchandise(place: Arrangement, theme:number, span:number, variation:nu
       place("cylinder","#966f48",w*.35,1.35,2.03,.16,.48,.16);
       break;
     }
-    case 4: { // Pots, broad leaves and a dotted row of cut flowers.
+    case 4: { // Potted foliage and cut stems, with individual blades and flower heads.
       place("box",rack,0,.38,1.99,w,.10,.53);
       for(let i=0;i<4;i++){
-        const x=(i-1.5)*w*.222, y=.68+(i%2)*.14;
-        place("vase",pottery[(i+variation)%5],x,.58,1.96,.24,.31,.24);
-        place("cylinder","#626b46",x,y+.18,1.96,.024,.55,.024);
+        const x=(i-1.5)*w*.222, height=.41+((variation+i)%3)*.09;
+        place("vase",pottery[(i+variation)%5],x,.585,1.96,.21,.31,.21);
         for(let j=0;j<3;j++){
-          const side=(j%2===0?1:-1);
-          place("round",j===2?"#9dab74":"#688963",x+side*.062,y+j*.102,1.95,.10,.24,.066,.22,side*.64);
+          const s=j-1, length=height*(1-.17*Math.abs(s)), top=.68+length;
+          const shift=s*.061;
+          place("cylinder","#617449",x+shift*.5,.68+length*.5,1.96+s*.018,.010,length,.010,0,-s*.13);
+          for(const side of [-1,1]) {
+            const y=.74+length*(side>0?.56:.23);
+            place("leaf",side>0?"#779753":"#527341",x+shift*.7+side*.048,y,1.94+s*.025,
+              .10,.21,.11,.3*s,-side*.63);
+          }
+          if(i%2===0) place("bloom",i===0?"#d29b88":"#e3ca93",x+shift,top,1.96+s*.018,.16,.14,.16,.6*j,s*.40);
+          else place("leaf","#80975e",x+shift,top-.015,1.95,.085,.19,.10,j,.24*s);
         }
-        if(i%2===0)place("round","#ba7f73",x,y+.43,1.95,.13,.10,.13);
       }
       break;
     }
@@ -242,15 +290,74 @@ function merchandise(place: Arrangement, theme:number, span:number, variation:nu
       place("box","#ebdcc1",0,1.47,1.92,w,.035,.46);
       break;
     }
-    default: { // Folded textiles and draped swatches.
+    default: { // Folded linens styled with glazed vessels in the window display.
       for(let row=0;row<2;row++){
         const y=.48+row*.77;
         place("box",rack,0,y,1.99,w,.055,.52);
-        for(let i=0;i<3;i++)
+        for(let i=0;i<2;i++)
           for(let fold=0;fold<3;fold++)
-            place("box",cloth[(variation+i+fold)%cloth.length],(i-1)*w*.30,y+.09+fold*.085,1.96,w*.25,.078,.36-.02*fold);
+            place("box",cloth[(variation+i+fold)%cloth.length],(i-.35)*w*.32,y+.09+fold*.085,1.96,w*.25,.078,.36-.02*fold);
+        const diameter=Math.min(.25,w*.18);
+        place("vase",row ? "#57958e" : "#b77955",-w*.37,y+.165,1.92,diameter,.27,diameter);
+        place("vase",row ? "#c3a275" : "#846565",-w*.28,y+.225,2.04,diameter*.78,.39,diameter*.78);
       }
     }
+  }
+}
+
+function checkoutFixtures(place: Arrangement, width: number, theme: typeof themes[number], themeIndex: number, inwardSign: number) {
+  const depth = checkoutDepth, top = checkoutTop;
+  place("box", "#554c42", 0, .055, depth, width - .15, .11, .47);
+  place("box", theme.accent, 0, .49, depth, width - .06, .79, .50);
+  const ribs = Math.floor(width / .09);
+  for (let i = 0; i < ribs; i++) {
+    place("box", theme.trim, (i + .5 - ribs / 2) * .09, .49, depth - .258, .026, .73, .022);
+  }
+  place("box", "#b4996b", 0, top - .074, depth, width, .022, .555);
+  place("box", "#dfd5c4", 0, top - .033, depth, width, .066, .57);
+
+  // A raised staff terminal and the small customer display face opposite sides of the desk.
+  const till = -.13, monitorDepth = depth + .11;
+  place("box", "#393e3c", till, top + .015, monitorDepth, .23, .030, .16);
+  place("box", "#575950", till, top + .098, monitorDepth, .047, .16, .055);
+  place("box", "#2c3533", till, top + .235, monitorDepth, .32, .224, .032, 0, 0, -.16 * inwardSign);
+  place("box", "#a6b8aa", till, top + .236, monitorDepth + .022, .29, .194, .009, 0, 0, -.16 * inwardSign);
+  place("box", "#434842", till, top + .115, depth - .030, .17, .090, .027);
+  place("box", "#b5c4a4", till, top + .115, depth - .047, .145, .062, .008);
+  // A payment keypad and thermal printer sit within reach of the cashier.
+  const reader = till - .13, readerDepth = depth - .145;
+  place("box", "#303b3b", reader, top + .032, readerDepth, .10, .055, .137);
+  place("box", "#82a69f", reader, top + .061, readerDepth + .033, .077, .008, .044);
+  for (let i = 0; i < 3; i++) place("box", "#a5aea8", reader, top + .062, readerDepth - .047 + .016 * i, .068, .006, .008);
+  const printer = width * .36;
+  place("box", "#555754", printer, top + .069, depth + .10, .122, .138, .15);
+  place("box", "#262c2b", printer, top + .139, depth + .089, .090, .007, .019);
+  place("box", "#eee7d7", printer, top + .172, depth + .093, .072, .061, .007, 0, 0, -.24 * inwardSign);
+
+  // Packaging stays on the narrow wall ledge beside the clerk's shoulder.
+  const shelf = width * .31;
+  place("box", "#927454", shelf, 1.43, 2.235, .37, .032, .21);
+  for (let i = 0; i < 3; i++) {
+    const x = shelf + (i - 1) * .098;
+    const h = .162 + .033 * (i % 2), z = 2.23 + .016 * (i % 2);
+    place("box", i === 1 ? "#8e7161" : "#bd9b76", x, 1.449 + h / 2, z, .108, h, .059);
+    for (const side of [-1, 1]) place("cylinder", "#7f6851", x + side * .020, 1.465 + h, z, .006, .036, .006);
+    place("box", "#7f6851", x, 1.483 + h, z, .043, .006, .006);
+  }
+
+  const pack = width * .13;
+  place("box", "#857969", pack, top + .009, depth - .043, .235, .017, .241);
+  if (themeIndex === 4) {
+    place("vase", "#a97550", pack, top + .093, depth, .106, .149, .106);
+    for (const side of [-1, 1]) {
+      place("leaf", "#627d55", pack + side * .024, top + .215, depth, .057, .156, .060, 0, -.30 * side);
+      place("bloom", "#b67772", pack + side * .031, top + .273, depth, .068, .052, .063);
+    }
+  } else if (themeIndex === 2 || themeIndex === 3) {
+    place("bowl", "#93a99e", pack, top + .065, depth, .17, .10, .17);
+  } else {
+    place("box", "#a38672", pack, top + .035, depth, .20, .030, .17, .055);
+    place("box", "#cec4ad", pack, top + .056, depth, .192, .025, .168, -.04);
   }
 }
 
@@ -363,17 +470,17 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
         const j=(i+1)%wing.points.length;
         const av=wing.points[i].clone().addScaledVector(wing.insets[i],.12);
         const bv=wing.points[j].clone().addScaledVector(wing.insets[j],.12);
-        const a=new T.Vector3(av.x,base+.47,av.y), b=new T.Vector3(bv.x,base+.47,bv.y);
-        const c=new T.Vector3(b.x,base+1.08,b.z), d=new T.Vector3(a.x,base+1.08,a.z);
         const length=av.distanceTo(bv);
         if(length < .001)continue;
+        const a = new T.Vector3(av.x, base + .47, av.y), b = new T.Vector3(bv.x, base + .47, bv.y);
+        const c = new T.Vector3(b.x, base + 1.08, b.z), d = new T.Vector3(a.x, base + 1.08, a.z);
         glass.quad(a,b,c,d,"#ffffff");
         beam(a,b,1.105,.052,.052,"#8a7b66");
         beam(a,b,.49,.044,.045,"#877f71");
         while(nextPost < run+length){
-          const post=a.clone().lerp(b,(nextPost-run)/length);
-          post.y=base+.81;
-          fittings.put("box","#a49a86",post,.029,.62,.032);
+          const t = (nextPost - run) / length;
+          const p = av.clone().lerp(bv, t);
+          fittings.put("box","#a49a86",new T.Vector3(p.x,base+.81,p.y),.029,.62,.032);
           nextPost+=1.65;
         }
         run+=length;
@@ -395,7 +502,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       fittings.put("box",c,a.clone().lerp(b,.5),w,Math.abs(b.y-a.y),w);
     };
     // The lit floor and continuous rear wall give a view right into each shop from the gallery.
-    const aisleDepth=displayDepth;
+    const aisleDepth=arcade.depth, deeper=aisleDepth-displayDepth;
     if (arcade.shop) {
       // Exposed ends face a covered gallery. Finish the outside of the actual partitions.
       const end = half + .025, rear = setback + aisleDepth + .025;
@@ -458,22 +565,33 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     for (const vertex of [a,b,ca,cb]) vertex.addScaledVector(inward,-.055);
     signs.quad(a,b,cb,ca,"#ffffff","#ffffff",tileUv(themeIndex,1,themes.length,reverse));
 
-    const stalls=displayCount(bay.width);
+    const stalls=displayCount(bay.width), checkout = shopCheckout(arcade, floor, units);
     for(let i=0;i<stalls;i++) {
       const span=bay.width/stalls;
       const u=-half+span*(i+.5);
       const a=point(u-.16,0,setback), b=point(u+.16,0,setback);
       const yaw=-Math.atan2(b.z-a.z,b.x-a.x);
-      const arrange:Arrangement=(form,color,x,y,d,w,h,z,turn=0,lean=0)=>{
-        fittings.put(form,color,point(u+x,y,setback+d),w,h,z,yaw+turn,lean);
+      const arrange:Arrangement=(form,color,x,y,d,w,h,z,turn=0,lean=0,pitch=0)=>{
+        fittings.put(form,color,point(u+x,y,setback+deeper+d),w,h,z,yaw+turn,lean,pitch);
       };
       // Each upright photographic panel uses one tile of the local 4×2 merchandise atlas.
       const photoWidth=Math.min(span*.92,1.92), photoH=Math.min(2.52,photoWidth/0.75);
       const d=setback+aisleDepth-.045, y0=.10, y1=y0+photoH;
       const pl=point(u-photoWidth/2,y0,d),pr=point(u+photoWidth/2,y0,d);
       const mirror=pr.clone().sub(pl).dot(rightOnScreen)<0;
-      photos.quad(pl,pr,point(u+photoWidth/2,y1,d),point(u-photoWidth/2,y1,d),"#fff","#fff",tileUv(themeIndex,4,2,mirror));
-      merchandise(arrange,themeIndex,span,id+i);
+      if (checkout && i === checkout.stall) {
+        const centre = checkout.along;
+        const desk: Arrangement = (form, color, x, ...args) => arrange(form, color, x + centre - u, ...args);
+        const inwardSign = Math.sign(inward.x * Math.sin(yaw) + inward.z * Math.cos(yaw));
+        checkoutFixtures(desk, checkout.width, theme, themeIndex, inwardSign);
+        const w = Math.min(1.27, checkout.width * .81), h = w / 7.1;
+        const left = point(centre - w / 2, 1.94, d), right = point(centre + w / 2, 1.94, d);
+        signs.quad(left, right, point(centre + w / 2, 1.94 + h, d), point(centre - w / 2, 1.94 + h, d),
+          "#ffffff", "#ffffff", tileUv(themeIndex, 1, themes.length, mirror));
+      } else {
+        photos.quad(pl,pr,point(u+photoWidth/2,y1,d),point(u-photoWidth/2,y1,d),"#fff","#fff",tileUv(themeIndex,4,2,mirror));
+        merchandise(arrange,themeIndex,span,id+i);
+      }
       // Concealed warm light under the display header and the ceiling fixture read even in the covered arcade.
       arrange("box","#655749",0,ceiling-.055,.77,Math.min(1.25,span*.65),.085,.105);
       arrange("lamp","#ffe1a5",0,ceiling-.104,.77,Math.min(1.22,span*.62),.019,.075);
@@ -484,14 +602,21 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       }
     }
   }
-  const roomMaterial=new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.85,emissive:"#b09474",emissiveIntensity:.075});
-  interior.add(group,roomMaterial).name="Shop interiors";
-  if (returns.position.length) returns.add(group,roomMaterial).name="Arcade wall returns";
-  fittings.add(group);
+  const glow={value:0};
+  const roomFinish:T.MeshStandardMaterialParameters={vertexColors:true,side:T.DoubleSide,roughness:.85,emissive:"#b09474",emissiveIntensity:.075};
+  const rooms=interior.add(group,litAfterDark(new T.MeshStandardMaterial(roomFinish),glow));
+  rooms.name="Shop interiors";
+  // The outside of an end shop's partitions faces the gallery, so it stays unlit at night.
+  if (returns.position.length) returns.add(group,new T.MeshStandardMaterial(roomFinish)).name="Arcade wall returns";
+  fittings.add(group,glow);
   const atlas=signAtlas();
   signs.add(group,new T.MeshBasicMaterial({map:atlas,color:atlas?"#fff7dd":"#514b40",side:T.DoubleSide})).name="Shop signs";
   const glassMaterial=glazing();
   glass.add(group,glassMaterial).name="Glass shop fronts";
+  rooms.userData.night=(on:boolean)=>{
+    glow.value=on?.75:0;
+    glassMaterial.uniforms.night.value=on?1:0;
+  };
   addPhotoWall(photos,group,onMaterialsReady);
   return glassDoors(group,doors,glassMaterial);
 }

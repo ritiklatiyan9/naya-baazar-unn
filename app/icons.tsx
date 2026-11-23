@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 const symbols: Record<string, ReactNode> = {
+  phone: <path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a14 14 0 0 1-7-7l2-2z"/>,
   plan: <><path d="m3 8 9-5 9 5-9 5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
   pin: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.6"/></>,
   down: <><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></>,

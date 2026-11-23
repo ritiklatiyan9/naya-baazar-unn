@@ -4,6 +4,7 @@ import { bindSurfaceGestures } from "./gestures";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
 import { westPassageWalkway, wingBoundaries } from "./wings";
+import { cafeTableFootprints } from "./cafes";
 import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
@@ -26,7 +27,8 @@ export type ModelState = {
   selected: number | null;
   statuses: Record<number, Booking>;
 };
-export type CameraView = "overview" | "courtyard" | "street" | "gallery";
+type WalkingView = "street" | "gallery" | "delivery";
+export type CameraView = "overview" | "courtyard" | WalkingView;
 
 export async function createViewer(host: HTMLDivElement, signal: AbortSignal, options: ViewOptions) {
   const [groundUnits, firstUnits] = await Promise.all([
@@ -164,8 +166,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       if (dirty || (doorsMoving && now - lastDoorFrame >= 1000 / 30 - 1)) {
         const step = activityEnabled && lastDoorFrame ? Math.min((now - lastDoorFrame) / 1000, 0.1) : 1;
         lastDoorFrame = now;
-        const groundMoving = ground.updateDoors(camera.position, step);
-        const upperMoving = first.updateDoors(camera.position, step);
+        const groundMoving = ground.updateDoors(camera.position, step, activity.openDoors.ground);
+        const upperMoving = first.updateDoors(camera.position, step, activity.openDoors.first);
         doorsMoving = groundMoving || upperMoving;
         activity.setCameraPosition(camera.position);
         renderer.render(scene, camera);
@@ -242,16 +244,21 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       camera.position.copy(controls.target).add(offset);
       controls.update();
     }
-    function onFoot() { return location === "street" || location === "gallery"; }
+    function onFoot() { return location === "street" || location === "gallery" || location === "delivery"; }
     function eyeHeight() {
       return (location === "gallery" ? shopFloorHeight.first : shopFloorHeight.ground) + 1.58;
     }
-    function walkingView(upper: boolean) {
-      const eye = upper ? sheetPoint(1124, 747) : sheetPoint(983, 580);
-      // Look slightly outward along the raised arcade to include the shops opposite and the plaza below.
-      const destination = upper ? sheetPoint(1069, 713) : sheetPoint(1049, 617);
+    function walkingView(view: WalkingView) {
+      const viewpoints = {
+        street:   { eye: [939, 569], target: [992, 603], drop: 0.31 },
+        gallery:  { eye: [1124, 747], target: [1069, 713], drop: 0.65 },
+        delivery: { eye: [833, 315], target: [870, 367], drop: 0.40 },
+      } as const;
+      const spot = viewpoints[view];
+      const eye = sheetPoint(spot.eye[0], spot.eye[1]);
+      const destination = sheetPoint(spot.target[0], spot.target[1]);
       camera.position.set(eye.x, eyeHeight(), eye.y);
-      controls.target.set(destination.x, eyeHeight() - (upper ? 0.65 : 0.16), destination.y);
+      controls.target.set(destination.x, eyeHeight() - spot.drop, destination.y);
       previousEye.copy(eye);
       controls.update();
     }
@@ -283,7 +290,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       controls.enableRotate = !walking;
       if (view === "overview") overview();
       else if (view === "courtyard") courtyard();
-      else walkingView(view === "gallery");
+      else walkingView(view);
       options.viewChanged?.(view);
       render();
     }
@@ -607,6 +614,14 @@ function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
   }
   c.fillStyle = "white";
   polygon(westPassageWalkway);
+  if (floor === "ground") {
+    c.fillStyle = "black";
+    for (const table of cafeTableFootprints(units)) {
+      c.beginPath();
+      c.arc(table.center.x, table.center.y, table.radius + 0.16, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
   const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
   const width = canvas.width, height = canvas.height;
   function allowed(x: number, z: number) {

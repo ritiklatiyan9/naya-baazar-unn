@@ -23,6 +23,7 @@ const viewpoints: { view: CameraView; label: string }[] = [
   { view: "courtyard", label: "Courtyard" },
   { view: "street", label: "Shopfront walk" },
   { view: "gallery", label: "First-floor gallery" },
+  { view: "delivery", label: "Delivery bay" },
 ];
 function linkedView(): CameraView {
   return viewpoints.find(({view}) => window.location.hash === "#model/" + view)?.view ?? "overview";
@@ -165,7 +166,7 @@ export default function ThreePlan(props: Props) {
     chooseView(view);
     window.history.replaceState(window.history.state, "", view === "overview" ? "#model" : "#model/" + view);
   }
-  const walking = cameraView === "street" || cameraView === "gallery";
+  const walking = cameraView === "street" || cameraView === "gallery" || cameraView === "delivery";
   return (
     <section className="three-plan" ref={panel} aria-label="Interactive 3D shop model">
       <div className="three-head">

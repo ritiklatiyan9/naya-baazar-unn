@@ -1,7 +1,11 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { sheetPoint } from "./geometry";
+import { sheetPoint, type Unit } from "./geometry";
+import { stockDelivery } from "./stockDelivery";
+import { riddenBike } from "./marketVehicles";
 import { contactTexture } from "./shoppers";
+
+import { assemble, box, part, roadShadow } from "./vehicleGeometry";
 
 const up = new T.Vector3(0, 1, 0);
 export function trafficLane() {
@@ -13,21 +17,24 @@ export function trafficLane() {
     const p = sheetPoint(x, y); return new T.Vector3(p.x, 0, p.y);
   }));
   const points: T.Vector3[] = [];
-  const n = 60, radius = 2.85;
+  const n = 60, radius = 3.20;
+  // A wider turning circle at each entrance leaves the kerbs clear along the two-way street.
+  const laneOffset = (u: number) => T.MathUtils.lerp(radius, 1.76,
+    T.MathUtils.smoothstep(Math.min(u,1-u),0,.105));
   function axes(u: number) {
     const p = center.getPointAt(u), tangent = center.getTangentAt(u);
     return { p, tangent, side: new T.Vector3(tangent.z, 0, -tangent.x) };
   }
   for (let i = 0; i <= n; i++) {
     const { p, side } = axes(i / n);
-    points.push(p.addScaledVector(side, radius));
+    points.push(p.addScaledVector(side, laneOffset(i/n)));
   }
   for (let i = 1; i < 12; i++) {
     const { p, side, tangent } = axes(1), theta = i * Math.PI / 12;
     points.push(p.addScaledVector(side, radius * Math.cos(theta)).addScaledVector(tangent, radius * Math.sin(theta)));
   }
   for (let i = n; i >= 0; i--) {
-    const { p, side } = axes(i / n); points.push(p.addScaledVector(side, -radius));
+    const { p, side } = axes(i / n); points.push(p.addScaledVector(side, -laneOffset(i/n)));
   }
   for (let i = 1; i < 12; i++) {
     const { p, side, tangent } = axes(0), theta = i * Math.PI / 12;
@@ -65,7 +72,7 @@ function coachwork(sections: Section[], bottom: number) {
   return g;
 }
 
-function car(parent: T.Group, paint: string, suv: boolean) {
+function car(parent: T.Group, paint: string, suv: boolean, shadowMaterial: T.Material) {
   const group = new T.Group(); group.name = suv ? "Moving crossover" : "Moving saloon";
   parent.add(group);
   const details: T.BufferGeometry[] = [];
@@ -73,21 +80,6 @@ function car(parent: T.Group, paint: string, suv: boolean) {
   const glass: T.BufferGeometry[] = [];
   const scale = suv ? 1.04 : 1, height = suv ? 1.63 : 1.45;
   const temp = new T.Object3D();
-  function part(bucket: T.BufferGeometry[], geometry: T.BufferGeometry, color: string, x = 0, y = 0, z = 0,
-    sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) {
-    const g = geometry.index ? geometry.toNonIndexed() : geometry;
-    if (g !== geometry) geometry.dispose();
-    g.deleteAttribute("uv");
-    temp.position.set(x, y, z); temp.scale.set(sx, sy, sz); temp.rotation.set(rx, ry, rz); temp.updateMatrix();
-    g.applyMatrix4(temp.matrix);
-    const colors = new T.Float32BufferAttribute(new Float32Array(g.getAttribute("position").count * 3), 3);
-    const tint = new T.Color(color);
-    for (let i = 0; i < colors.count; i++)colors.setXYZ(i, tint.r, tint.g, tint.b);
-    g.setAttribute("color", colors); bucket.push(g);
-  }
-  function box(bucket: T.BufferGeometry[], color: string, x: number, y: number, z: number, w: number, h: number, d: number, rx = 0, ry = 0, rz = 0) {
-    part(bucket, new T.BoxGeometry(w, h, d), color, x, y, z, 1, 1, 1, rx, ry, rz);
-  }
   function panel(bucket: T.BufferGeometry[], verts: number[][], color: string) {
     const g = new T.BufferGeometry();
     g.setAttribute("position", new T.Float32BufferAttribute([0, 1, 2, 0, 2, 3].flatMap(i => verts[i]), 3)); g.computeVertexNormals();
@@ -132,14 +124,9 @@ function car(parent: T.Group, paint: string, suv: boolean) {
   box(details, "#302f30", 0, .55, 2.014, .79, .12, .041);
   box(details, "#d4d2bf", 0, .583, 2.039, .33, .075, .015);
   box(details, "#302f30", 0, .48, -2.087, 1.11, .08, .04);
-  function assemble(pieces: T.BufferGeometry[], props: T.MeshStandardMaterialParameters) {
-    const mesh = new T.Mesh(mergeGeometries(pieces)!, new T.MeshStandardMaterial({ vertexColors: true, side: T.DoubleSide, ...props }));
-    pieces.forEach(g => g.dispose());
-    mesh.receiveShadow = true; group.add(mesh);
-  }
-  assemble(details, { roughness: .56 });
-  assemble(shell, { roughness: .33, metalness: .22 });
-  assemble(glass, { roughness: .21, metalness: .10, transparent: true, opacity: .67, depthWrite: false });
+  assemble(group, details, { roughness: .56 });
+  assemble(group, shell, { roughness: .33, metalness: .22 });
+  assemble(group, glass, { roughness: .21, metalness: .10, transparent: true, opacity: .67, depthWrite: false });
   const tireParts: T.BufferGeometry[] = [];
   const cylinder = (r: number, h: number) => new T.CylinderGeometry(r, r, h, 18).rotateZ(Math.PI / 2);
   part(tireParts, cylinder(.324, .17), "#292a29");
@@ -157,10 +144,7 @@ function car(parent: T.Group, paint: string, suv: boolean) {
   wheels.instanceMatrix.setUsage(T.DynamicDrawUsage);
   wheels.frustumCulled = false;
   group.scale.setScalar(scale);
-  const shadow = new T.Mesh(new T.PlaneGeometry(2.28, 4.6), new T.MeshBasicMaterial({
-    map: contactTexture(), transparent: true, depthWrite: false,
-  }));
-  shadow.rotation.x = -Math.PI / 2; shadow.position.y = .011; group.add(shadow);
+  roadShadow(group, shadowMaterial, 2.28, 4.6);
   function update(point: T.Vector3, heading: number, distance: number) {
     group.position.set(point.x, .032, point.z); group.rotation.y = heading;
     const rotation = (distance / (.324 * scale)) % (2 * Math.PI);
@@ -174,16 +158,85 @@ function car(parent: T.Group, paint: string, suv: boolean) {
   return update;
 }
 
-export function createTraffic(parent: T.Group) {
-  const lane = trafficLane(), distance = lane.getLength();
-  const cars = [car(parent, "#a15e4d", false), car(parent, "#d3c9ae", true), car(parent, "#547674", false)];
-  const point = new T.Vector3(), tangent = new T.Vector3();
-  return (time: number) => {
-    const travel = time * 2.65;
-    cars.forEach((position, i) => {
-      const u = T.MathUtils.euclideanModulo(travel / distance + [.25, .51, .86][i], 1);
-      lane.getPointAt(u, point); lane.getTangentAt(u, tangent);
-      position(point, Math.atan2(tangent.x, tangent.z), travel);
-    });
+const trafficPeriod=121;
+type VehicleState={position:T.Vector3; heading:number; travel:number; bank:number};
+
+function driveCycle(lane:T.CatmullRomCurve3, start:number, delay:number, hold=0, bayOffset=0) {
+  const length=lane.getLength();
+  const movingTime=trafficPeriod-hold, ramp=hold?2.3:0, speed=length/(movingTime-ramp);
+  const direction = new T.Vector3(), ahead=new T.Vector3(), behind=new T.Vector3(), center=new T.Vector3();
+  function position(distance:number, out:T.Vector3) {
+    const d=T.MathUtils.euclideanModulo(distance,length);
+    const u=T.MathUtils.euclideanModulo(start+d/length,1);
+    lane.getPointAt(u,out);
+    if(bayOffset){
+      const distanceToBay=Math.min(d,length-d);
+      if(distanceToBay<14){
+        lane.getTangentAt(u,direction);
+        const shift=bayOffset*(1-T.MathUtils.smootherstep(distanceToBay,0,14));
+        out.x+=direction.z*shift; out.z-=direction.x*shift;
+      }
+    }
+    return out;
+  }
+  return (time:number,state:VehicleState) => {
+    const clock=T.MathUtils.euclideanModulo(time+delay,trafficPeriod);
+    const t=Math.max(0,clock-hold);
+    const d=t<ramp ? .5*speed*t*t/ramp : t>movingTime-ramp ?
+      length-.5*speed*(movingTime-t)**2/ramp : speed*(t-ramp*.5);
+    position(d,state.position); position(d+.36,ahead); position(d-.36,behind);
+    state.heading=Math.atan2(ahead.x-behind.x,ahead.z-behind.z);
+    // Gentle counter-lean around the street bends, capped for the slow market traffic.
+    center.copy(ahead).sub(state.position);
+    behind.subVectors(state.position,behind);
+    const curvature=Math.atan2(center.x*behind.z-center.z*behind.x,center.dot(behind))/.36;
+    state.bank=T.MathUtils.clamp(-curvature*speed*speed/9.81,-.12,.12);
+    state.travel=d+Math.floor((time+delay)/trafficPeriod)*length;
+  };
+}
+
+function station(lane:T.CatmullRomCurve3,x:number,z:number) {
+  const target=sheetPoint(x,z), p=new T.Vector3();
+  let u=0,closest=Infinity;
+  for(let i=0;i<1500;i++){
+    lane.getPointAt(i/1500,p);
+    const d=(p.x-target.x)**2+(p.z-target.y)**2;
+    if(d<closest){closest=d;u=i/1500;}
+  }
+  return u;
+}
+function parkingCorners(parent:T.Group,pose:VehicleState) {
+  const pieces:T.BufferGeometry[]=[];
+  for(const x of [-1.02,1.02]) for(const z of [-2.78,2.78]) {
+    box(pieces,"#c9c4a9",x-.16*Math.sign(x),0,z,.37,.008,.056);
+    box(pieces,"#c9c4a9",x,0,z-.27*Math.sign(z),.056,.008,.59);
+  }
+  const corners=new T.Group();
+  corners.name="Kerbside parking bay"; corners.position.copy(pose.position); corners.position.y=.046;
+  corners.rotation.y=pose.heading; assemble(corners,pieces,{roughness:.99}); parent.add(corners);
+}
+export function createTraffic(parent: T.Group,groundUnits:Unit[]) {
+  const lane=trafficLane(), first=station(lane,793,286), second=station(lane,579,620);
+  const shadowMaterial=new T.MeshBasicMaterial({map:contactTexture(),transparent:true,depthWrite:false});
+  const delivery=stockDelivery(parent,groundUnits,shadowMaterial,trafficPeriod);
+  const vehicles=[
+    {drive:driveCycle(lane,first,-5,15,2.11),place:car(parent,"#a15e4d",false,shadowMaterial)},
+    {drive:driveCycle(lane,second,9,20,2.17),place:car(parent,"#d3c9ae",true,shadowMaterial)},
+    {drive:driveCycle(lane,.16,0),place:car(parent,"#547674",false,shadowMaterial)},
+    {drive:driveCycle(lane,.05,0),place:riddenBike(parent,false,shadowMaterial)},
+    {drive:driveCycle(lane,.93,0),place:riddenBike(parent,true,shadowMaterial)},
+  ];
+  const state:VehicleState={position:new T.Vector3(),heading:0,travel:0,bank:0};
+  vehicles[0].drive(5,state); parkingCorners(parent,state);
+  vehicles[1].drive(0,state); parkingCorners(parent,state);
+  return {
+    serviceShopId:delivery?.id, workerPose:delivery?.pose,
+    update(time:number,openDoors:Set<number>) {
+      for(const vehicle of vehicles){
+        vehicle.drive(time,state);
+        vehicle.place(state.position,state.heading,state.travel,state.bank);
+      }
+      delivery?.update(time,openDoors);
+    }
   };
 }

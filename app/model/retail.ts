@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Floor, Unit } from "./geometry";
+import { cafeShopIds } from "./marketPlaces";
 import { glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
 import { shellBoundaries, wingBoundaries } from "./wings";
 
@@ -253,6 +254,7 @@ function merchandise(place: Arrangement, theme:number, span:number, variation:nu
 }
 
 type Door = {
+  id: number;
   hinge: Vec; center: Vec; width: number; yaw: number; inwardTurn: number; resting: number; angle: number;
 };
 
@@ -298,12 +300,12 @@ function glassDoors(group:T.Group, doors:Door[], glassMaterial:T.Material) {
     paneMesh.setMatrixAt(index,matrix);
   }
   doors.forEach(position);
-  return (eye:T.Vector3,delta:number) => {
+  return (eye:T.Vector3,delta:number,approaching:ReadonlySet<number>) => {
     let changed=false, moving=false;
     for(let i=0;i<doors.length;i++){
       const door=doors[i],height=eye.y-door.hinge.y;
       const near=height>.15 && height<2.6 && door.center.distanceToSquared(eye)<5.3;
-      const target=near?Math.PI*.47:door.resting;
+      const target=(near || approaching.has(door.id)) ? Math.PI*.47 : door.resting;
       if(Math.abs(target-door.angle)<.0001)continue;
       const step=delta>=.5?1:1-Math.exp(-8*Math.max(0,delta));
       door.angle=T.MathUtils.lerp(door.angle,target,step);
@@ -379,7 +381,9 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
   }
   const bays = wingBoundaries.flatMap(wing => retailBays(wing,units));
   for(const bay of bays) {
-    const themeIndex = (bay.id * 3 + Math.floor(bay.id / 7)) % themes.length;
+    let themeIndex = (bay.id * 3 + Math.floor(bay.id / 7)) % themes.length;
+    if (floor === "ground" && bay.id === cafeShopIds.coffee) themeIndex = 3;
+    if (floor === "ground" && bay.id === cafeShopIds.bakery) themeIndex = 6;
     const theme=themes[themeIndex], half=bay.width/2;
     const point=(u:number,y:number,d:number)=>{
       const p=bay.at(u,d);
@@ -427,7 +431,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     const opening=right.clone().sub(left);
     const angle=bay.id%4===1?.53:bay.id%6===0?.22:0;
     const turnSign=Math.sign(opening.z*inward.x-opening.x*inward.z) || 1;
-    doors.push({hinge:left,center:left.clone().lerp(right,.5).add(new T.Vector3(0,1.28,0)),width:opening.length(),
+    doors.push({id:bay.id,hinge:left,center:left.clone().lerp(right,.5).add(new T.Vector3(0,1.28,0)),width:opening.length(),
       yaw:-Math.atan2(opening.z,opening.x),inwardTurn:turnSign,resting:angle,angle});
     const boardWidth=Math.min(3.0,bay.width*.86);
     const signHeight=Math.min(.47,.21*boardWidth);

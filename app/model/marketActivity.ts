@@ -1,10 +1,12 @@
 import * as T from "three";
 import { sheetPoint, type Floor, type Unit } from "./geometry";
-import { glassSetback, retailBays, shopFloorHeight } from "./retailFrontages";
+import { glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
 import { wingBoundaries } from "./wings";
 import { shopperPortraits } from "./shopperAppearance";
 import { makeShopperBatch, type PersonPose } from "./shoppers";
 import { createTraffic } from "./traffic";
+import { buildCafes } from "./cafes";
+import { evaluateJourney, hasDisplayAisle, wingJourneys, type ShoppingJourney } from "./shoppingJourneys";
 
 type Route = {
   path: T.CatmullRomCurve3;
@@ -31,8 +33,9 @@ function footpath(points: T.Vector2[], floorY: number, browse: boolean, look: nu
   return { path, length, speed, hold, offset, floorY, look, browse };
 }
 
-function floorRoutes(units: Unit[], floor: Floor) {
+function floorRoutes(units: Unit[], floor: Floor, serviceShop?: number) {
   const routes: Route[] = [];
+  const journeys: ShoppingJourney[] = [];
   for (const [wingIndex, wing] of wingBoundaries.entries()) {
     const bays = retailBays(wing, units);
     if (!bays.length) continue;
@@ -40,10 +43,22 @@ function floorRoutes(units: Unit[], floor: Floor) {
     const total = bays.reduce((sum, b) => sum + b.width, 0);
     const sections = Math.max(1, Math.round(total / (floor === "first" ? 20 : 31)));
     const first = bays[0], initial = -first.width / 2;
+    let edge = initial, receivingDoor: number | undefined;
+    for (const bay of bays) {
+      if (bay.id === serviceShop) receivingDoor = edge + bay.width / 2 + shopEntrance(bay.width).center;
+      edge += bay.width;
+    }
     for (let i = 0; i < sections; i++) {
-      const start = initial + (i + .14) * total / sections;
-      const end = initial + (i + .86) * total / sections;
-      const inset = floor === "first" ? .75 : 1.18;
+      let start = initial + (i + .14) * total / sections;
+      let end = initial + (i + .86) * total / sections;
+      // Leave a crossing for cartons moving between the curb and the receiving shop.
+      if (receivingDoor !== undefined && receivingDoor + 1.25 > start && receivingDoor - 1.25 < end) {
+        if (receivingDoor - start > end - receivingDoor) end = receivingDoor - 1.25;
+        else start = receivingDoor + 1.25;
+        if (end - start < 1.8) continue;
+      }
+      // Leave the inner lane next to the windows free for shoppers changing shops.
+      const inset = floor === "first" ? .78 : .84;
       const count = Math.ceil((end - start) / .70);
       const points = Array.from({ length: count + 1 }, (_, n) => first.at(start + (end - start) * n / count, inset));
       const middle = (start + end) / 2;
@@ -52,23 +67,24 @@ function floorRoutes(units: Unit[], floor: Floor) {
     }
 
     // Only occupy the clear aisle behind each display window. Curved end caps stay open.
-    const regular = bays.filter(b => {
-      if (b.width < 2.65) return false;
-      const middle = b.at(0, 0);
-      return middle.clone().sub(b.at(-1, 0)).normalize().dot(b.at(1, 0).sub(middle).normalize()) > .96;
-    });
+    const regular = bays.filter(hasDisplayAisle);
+    const occupied = new Set<number>();
+    if (serviceShop !== undefined) occupied.add(serviceShop);
     const stride = 4;
     const offset = (wingIndex + (floor === "first" ? 2 : 0)) % stride;
     for (let i = offset; i < regular.length; i += stride) {
       const bay = regular[i];
+      if (occupied.has(bay.id)) continue;
+      occupied.add(bay.id);
       const span = Math.min(1.2, bay.width * .5 - .52);
       const depth = glassSetback[floor];
       const normal = bay.at(0, depth + 1).sub(bay.at(0, depth));
       const points = [bay.at(-span, depth + .91), bay.at(0, depth + .75), bay.at(span, depth + 1)];
       routes.push(footpath(points, shopFloorHeight[floor], true, angle(normal.x, normal.y), i + wingIndex * 53 + (floor === "first" ? 12 : 8)));
     }
+    journeys.push(...wingJourneys(bays, floor, occupied, wingIndex, receivingDoor));
   }
-  return routes;
+  return { routes, journeys };
 }
 
 // Independent pedestrian routes stay on the plaza tiles, clear of the rosette, planters and drive.
@@ -126,34 +142,48 @@ export function buildMarketActivity(scene: T.Scene, groundUnits: Unit[], firstUn
   street.name = "Ground-floor market activity";
   upper.name = "First-floor market activity";
   scene.add(street, upper);
-  const groundRoutes = [...plazaRoutes(), ...floorRoutes(groundUnits, "ground")];
-  const upperRoutes = floorRoutes(firstUnits, "first");
+  const traffic = createTraffic(street, groundUnits);
+  const cafes = buildCafes(street, groundUnits);
+  const streetWalkers = floorRoutes(groundUnits, "ground", traffic.serviceShopId);
+  streetWalkers.routes.unshift(...plazaRoutes());
+  const faces = shopperPortraits();
 
-  const faces=shopperPortraits();
-
-  function level(group: T.Group, routes: Route[], seed: number) {
-    const people = makeShopperBatch(group, routes.length, seed, faces.material);
-    const poses = routes.map(() => ({ x: 0, z: 0, floorY: 0, heading: 0, stride: 0, walking: 0, browsing: 0, time: 0 }));
+  function level(group: T.Group, walkers: ReturnType<typeof floorRoutes>, seed: number, groundFloor: boolean) {
+    const { routes, journeys } = walkers;
+    const poses: PersonPose[] = Array.from({ length: routes.length + journeys.length }, () =>
+      ({ x: 0, z: 0, floorY: 0, heading: 0, stride: 0, walking: 0, browsing: 0, time: 0 }));
+    if (groundFloor && traffic.workerPose) poses.push(traffic.workerPose);
+    const dinerStart = poses.length;
+    if (groundFloor) poses.push(...cafes.diners);
+    const people = makeShopperBatch(group, poses.length, seed, faces.material, dinerStart);
+    const openDoors = new Set<number>();
     return {
-      update(time:number) {
-        for (let i=0;i<routes.length;i++)evaluateRoute(routes[i],time,poses[i]);
+      openDoors,
+      update(time: number) {
+        openDoors.clear();
+        for (let i = 0; i < routes.length; i++) evaluateRoute(routes[i], time, poses[i]);
+        for (let i = 0; i < journeys.length; i++) evaluateJourney(journeys[i], time, poses[routes.length + i], openDoors);
+        if (groundFloor) {
+          traffic.update(time, openDoors);
+          for (const diner of cafes.diners) diner.time = time;
+        }
         people.update(poses);
       },
       setCameraPosition: people.setCameraPosition,
     };
   }
-  const ground = level(street, groundRoutes, 3), first = level(upper, upperRoutes, 251);
-  const traffic = createTraffic(street);
+  const ground = level(street, streetWalkers, 3, true);
+  const first = level(upper, floorRoutes(firstUnits, "first"), 251, false);
   let elapsed = 0;
   function update(time: number) {
     elapsed = time;
     ground.update(time);
     if (upper.visible) first.update(time);
-    traffic(time);
   }
   update(0);
   return {
     update, facesReady:faces.ready,
+    openDoors: { ground: ground.openDoors, first: first.openDoors },
     setCameraPosition(position:T.Vector3) {
       ground.setCameraPosition(position);
       if(upper.visible)first.setCameraPosition(position);

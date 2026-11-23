@@ -2,6 +2,7 @@ import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type Unit } from "./geometry";
 import { addRetail } from "./retail";
+import { addRoofSigns } from "./roofSigns";
 import { glassSetback } from "./retailFrontages";
 import { shellBoundaries, type Boundary } from "./wings";
 
@@ -206,6 +207,7 @@ export function buildStorey(units: Unit[], floor: Floor, onMaterialsReady?: () =
   const deck = bottom + levelHeight;
   const group = new T.Group();
   drawShells(group, upper, bottom, deck);
+  if (upper) addRoofSigns(group, units, deck);
   const updateDoors = addRetail(group, units, floor, onMaterialsReady);
 
   // Preserve the actual measured unit polygons as pick targets and optional availability overlays.

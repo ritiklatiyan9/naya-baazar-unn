@@ -9,13 +9,17 @@
 }
 .explorer-grid.model-wide { grid-template-columns: minmax(0, 1fr); }
 .model-wide .three-stage { height: clamp(390px, 43vw, 660px); }
+.three-plan button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
 .three-head-actions {
   display: flex;
   align-items: center;
   gap: 0.65rem;
 }
-.three-plan .three-directory,
-.three-plan .three-camera-preset {
+.three-plan .three-directory {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -39,11 +43,47 @@
 .three-head {
   border-bottom: 1px solid var(--line, #d7dfd8);
 }
-.three-plan button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
+.three-viewbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .45rem .85rem;
+  padding: .48rem 1rem;
+  background: #f6f4ef;
+  border-bottom: 1px solid #d9d6cb;
 }
+.three-viewpoints,
+.three-nav-mode {
+  display: flex;
+  gap: .15rem;
+  align-items: center;
+}
+.three-viewbar button,
+.three-bottom .three-activity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  min-height: 36px;
+  padding: .35rem .65rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-size: .875rem;
+  font-weight: 550;
+  line-height: 1.25;
+}
+.three-viewbar button:hover,
+.three-bottom .three-activity:hover { background: #e8e5dc; }
+.three-viewbar button[aria-pressed="true"] {
+  background: #fffefb;
+  border-color: #d0cbbd;
+  box-shadow: 0 1px 2px #352d1f12;
+  color: #312d24;
+}
+.three-nav-mode { flex: 0 0 auto; }
+.three-activity { margin-left: auto; }
 .three-floor-control {
   display: flex;
   gap: 2px;
@@ -82,7 +122,7 @@
   height: clamp(350px, 35vw, 540px);
   position: relative;
   isolation: isolate;
-  background: #eae5d8;
+  background: #193a2c;
   overflow: hidden;
 }
 .three-host,
@@ -246,8 +286,13 @@
   flex: 1;
 }
 @media (max-width: 600px) {
+  .three-head { column-gap: .2rem; }
   .three-head-actions { gap: 0.25rem; }
-  .three-plan .three-directory, .three-plan .three-camera-preset { font-size: 0.8rem; }
+  .three-plan .three-directory { font-size: 0.8rem; }
+  .three-viewbar { padding: .36rem .55rem; }
+  .three-viewpoints { width: 100%; display: grid; grid-template-columns: .85fr .9fr 1.1fr 1.2fr; gap: 1px; }
+  .three-viewpoints button { height: 100%; }
+  .three-viewbar button { font-size: .8rem; padding: .3rem .4rem; }
   .three-head,
   .three-bottom {
     padding: 0.55rem 0.6rem;
@@ -256,7 +301,7 @@
     padding: 0.46rem 0.43rem;
     font-size: 0.79rem;
   }
-  .three-expand span {
+  .three-expand span, .three-directory span {
     display: none;
   }
   .three-stage {

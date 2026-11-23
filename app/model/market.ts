@@ -1,5 +1,6 @@
 import * as T from "three";
-import { Parts, sheetPoint } from "./geometry";
+import { Parts, sheetPoint, type Unit } from "./geometry";
+import { buildMarketActivity } from "./marketActivity";
 import { asphaltTexture, courtyardRosette, paverTexture, turfTexture } from "./siteMaterials";
 
 function surface(shape: T.Shape, color: string, thickness: number, y: number, texture?: T.Texture) {
@@ -60,19 +61,19 @@ function tree(parts: Parts, px: number, pz: number, size: number, seed: number, 
   }
 }
 
-function vehicle(
+function parkedBike(
   parts: Parts,
   px: number,
   pz: number,
   heading: number,
   color: string,
-  kind: "car" | "scooter" | "cycle",
+  kind: "scooter" | "cycle",
 ) {
   const { x, y: z } = sheetPoint(px, pz),
     yaw = (heading * Math.PI) / 180,
     unitQ = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), yaw);
   const at = (dx: number, y: number, dz: number) =>
-    new T.Vector3(dx, y, dz).applyQuaternion(unitQ).add(new T.Vector3(x, kind === "cycle" ? 0.11 : 0.032, z));
+    new T.Vector3(dx, y, dz).applyQuaternion(unitQ).add(new T.Vector3(x, 0.11, z));
   function box(c: string, dx: number, y: number, dz: number, w: number, h: number, l: number) {
     const p = at(dx, y, dz);
     parts.box(c, p.x, p.y, p.z, w, h, l, yaw);
@@ -80,76 +81,28 @@ function vehicle(
   function ball(c: string, dx: number, y: number, dz: number, w: number, h: number, l: number) {
     parts.add("round", c, at(dx, y, dz), new T.Vector3(w, h, l), unitQ);
   }
-  const wheelQ = unitQ
+  const bicycle = kind === "cycle",
+    wheelY = bicycle ? 0.34 : 0.31;
+  const ringQ = unitQ
     .clone()
-    .multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), Math.PI / 2));
-  if (kind === "car") {
-    box("#373f3b", 0, 0.48, 0, 1.65, 0.43, 3.76);
-    ball(color, 0, 0.76, 0, 1.88, 1.0, 4.42);
-    box(color, 0, 0.77, 0, 1.75, 0.48, 3.74);
-    ball("#516360", 0, 1.04, -0.15, 1.57, 1.07, 2.6);
-    ball(color, 0, 1.46, -0.18, 1.42, 0.24, 1.78);
-    box(color, 0, 1, 1.36, 1.52, 0.14, 0.76);
-    for (const side of [-1, 1]) {
-      box("#6f756c", side * 0.76, 1.13, 0.03, 0.065, 0.36, 0.085);
-      box("#dfd8b3", side * 0.62, 0.8, 1.91, 0.37, 0.14, 0.06);
-      box("#a44c37", side * 0.64, 0.84, -1.93, 0.33, 0.16, 0.06);
-      ball(color, side * 0.92, 1.05, 0.5, 0.23, 0.16, 0.23);
-      for (const wh of [-1.28, 1.23]) {
-        parts.add("pole", "#292e2c", at(side * 0.79, 0.37, wh), new T.Vector3(0.66, 0.22, 0.66), wheelQ);
-        parts.add("pole", "#9a9b8d", at(side * 0.91, 0.37, wh), new T.Vector3(0.36, 0.028, 0.36), wheelQ);
-      }
-    }
-  } else {
-    const bicycle = kind === "cycle",
-      wheelY = bicycle ? 0.34 : 0.31;
-    const ringQ = unitQ
-      .clone()
-      .multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), Math.PI / 2));
-    for (const dz of [-0.68, 0.68]) {
-      parts.add("ring", "#34372e", at(0, wheelY, dz), new T.Vector3(0.7, 0.7, bicycle ? 0.8 : 2.1), ringQ);
-      for (const d of [-1, 1])
-        parts.rod("#827f70", at(0, wheelY - 0.24, dz + d * 0.1), at(0, wheelY + 0.24, dz - d * 0.1), 0.018);
-    }
-    parts.rod(color, at(0, wheelY, -0.68), at(0, 0.81, -0.18), 0.038);
-    parts.rod(color, at(0, 0.81, -0.18), at(0, 0.36, 0.02), 0.046);
-    parts.rod(color, at(0, 0.36, 0.02), at(0, 0.92, 0.37), 0.045);
-    parts.rod(color, at(0, 0.82, -0.18), at(0, 0.9, 0.37), 0.034);
-    parts.rod("#787a6c", at(0, wheelY, 0.68), at(0, 1.12, 0.38), 0.035);
-    parts.rod("#4c4d41", at(-0.24, 1.12, 0.38), at(0.24, 1.12, 0.38), 0.035);
-    if (!bicycle) {
-      ball(color, 0, 0.6, -0.18, 0.53, 0.62, 1.12);
-      ball(color, 0, 0.8, 0.43, 0.4, 0.73, 0.33);
-      box("#e9debd", 0, 1.0, 0.54, 0.21, 0.16, 0.08);
-    }
-    ball("#393d36", 0, 0.9, -0.23, bicycle ? 0.21 : 0.4, 0.13, bicycle ? 0.34 : 0.74);
+    .multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), Math.PI / 2));
+  for (const dz of [-0.68, 0.68]) {
+    parts.add("ring", "#34372e", at(0, wheelY, dz), new T.Vector3(0.7, 0.7, bicycle ? 0.8 : 2.1), ringQ);
+    for (const d of [-1, 1])
+      parts.rod("#827f70", at(0, wheelY - 0.24, dz + d * 0.1), at(0, wheelY + 0.24, dz - d * 0.1), 0.018);
   }
-}
-
-function pedestrian(parts: Parts, px: number, pz: number, angle: number, i: number) {
-  const { x, y: z } = sheetPoint(px, pz),
-    yaw = (angle * Math.PI) / 180,
-    q = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), yaw);
-  const v = (dx: number, y: number, dz: number) =>
-    new T.Vector3(dx, y, dz).applyQuaternion(q).add(new T.Vector3(x, 0.11, z));
-  const shirt = ["#a25c3f", "#e3d7b8", "#65796d", "#6e8291", "#aa885e", "#7c5660"][i % 6];
-  const skin = ["#a97752", "#966c4c", "#ce9e76", "#815a44"][i % 4];
-  const leg = i % 3 ? "#4e5048" : "#807b69";
-  for (const side of [-1, 1]) {
-    const dz = side * 0.13;
-    parts.rod(leg, v(side * 0.095, 0.87, 0), v(side * 0.11, 0.4, dz * 0.5), 0.082);
-    parts.rod(leg, v(side * 0.11, 0.41, dz * 0.5), v(side * 0.12, 0.11, dz), 0.064);
-    parts.add("round", "#443e34", v(side * 0.12, 0.08, dz + 0.045), new T.Vector3(0.16, 0.12, 0.27), q);
-    parts.rod(shirt, v(side * 0.15, 1.34, 0), v(side * 0.22, 1.08, -dz * 0.4), 0.069);
-    parts.rod(skin, v(side * 0.22, 1.08, -dz * 0.4), v(side * 0.24, 0.9, -dz), 0.049);
+  parts.rod(color, at(0, wheelY, -0.68), at(0, 0.81, -0.18), 0.038);
+  parts.rod(color, at(0, 0.81, -0.18), at(0, 0.36, 0.02), 0.046);
+  parts.rod(color, at(0, 0.36, 0.02), at(0, 0.92, 0.37), 0.045);
+  parts.rod(color, at(0, 0.82, -0.18), at(0, 0.9, 0.37), 0.034);
+  parts.rod("#787a6c", at(0, wheelY, 0.68), at(0, 1.12, 0.38), 0.035);
+  parts.rod("#4c4d41", at(-0.24, 1.12, 0.38), at(0.24, 1.12, 0.38), 0.035);
+  if (!bicycle) {
+    ball(color, 0, 0.6, -0.18, 0.53, 0.62, 1.12);
+    ball(color, 0, 0.8, 0.43, 0.4, 0.73, 0.33);
+    box("#e9debd", 0, 1.0, 0.54, 0.21, 0.16, 0.08);
   }
-  parts.add("round", shirt, v(0, 1.11, 0), new T.Vector3(0.43, 0.65, 0.3), q);
-  parts.add("round", skin, v(0, 1.57, 0), new T.Vector3(0.245, 0.315, 0.24), q);
-  parts.add("round", "#473b30", v(0, 1.655, -0.014), new T.Vector3(0.25, 0.17, 0.245), q);
-  if (i % 3 === 0) {
-    const p = v(0.245, 0.7, -0.08);
-    parts.box("#bc9a6a", p.x, p.y, p.z, 0.15, 0.27, 0.24, yaw);
-  }
+  ball("#393d36", 0, 0.9, -0.23, bicycle ? 0.21 : 0.4, 0.13, bicycle ? 0.34 : 0.74);
 }
 
 // The carriageway separates the two paved wings. Both independent paving meshes
@@ -192,7 +145,7 @@ function insetKerb(points: T.Vector2[]) {
   return kerb;
 }
 
-export function buildMarket(scene: T.Scene) {
+export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Unit[]) {
   const board = new SiteShape();
   board.move(84, 128).line(1436, 128).line(1442, 134).line(1442, 844)
     .line(1436, 850).line(84, 850).line(78, 844).line(78, 134).closePath();
@@ -246,22 +199,10 @@ export function buildMarket(scene: T.Scene) {
     tree(detail, x, z, 3.2 + i * 0.2, i, true));
   [[200, 342], [635, 396], [1000, 254], [1314, 416], [173, 748]].forEach(([x, z], i) =>
     tree(detail, x, z, 3.8 + (i % 2) * 0.5, i + 10, false));
-  const cars: [number, number, number, string][] = [
-    [343, 721, 160, "#ded5c1"],
-    [489, 573, 95, "#8e6054"],
-    [837, 399, 178, "#65736d"],
-  ];
-  cars.forEach(([x, z, heading, color]) => vehicle(detail, x, z, heading, color, "car"));
-  vehicle(detail, 601, 595, 92, "#935443", "scooter");
-  vehicle(detail, 382, 669, -19, "#475d50", "scooter");
-  vehicle(detail, 881, 673, -30, "#7a644b", "cycle");
-  vehicle(detail, 915, 687, -20, "#735244", "cycle");
-  const people = [
-    [571, 652], [577, 654], [718, 683], [731, 691], [844, 705],
-    [883, 622], [919, 605], [1035, 706], [1040, 704], [1171, 699],
-    [1230, 602], [408, 727], [461, 716], [201, 581], [427, 531],
-  ];
-  people.forEach(([x, z], i) => pedestrian(detail, x, z, (i * 73) % 360, i));
+  parkedBike(detail, 905, 607, -36, "#843e36", "scooter");
+  parkedBike(detail, 918, 606, -32, "#475d50", "scooter");
+  parkedBike(detail, 905, 676, -30, "#7a644b", "cycle");
+  parkedBike(detail, 914, 682, -20, "#735244", "cycle");
   // Place stepped flights at the clear stair bays marked in the plan.
   [
     [602, 770, 0],
@@ -286,5 +227,5 @@ export function buildMarket(scene: T.Scene) {
     }
   });
   detail.build(scene);
-  return { boardOutline };
+  return { boardOutline, activity: buildMarketActivity(scene, groundUnits, firstUnits) };
 }

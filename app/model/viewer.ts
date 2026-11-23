@@ -2,6 +2,8 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
+import { wingBoundaries } from "./wings";
+import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
   levelHeight,
@@ -15,6 +17,7 @@ import {
 type ViewOptions = {
   select: (id: number) => void;
   failed: () => void;
+  viewChanged?: (view: CameraView | null) => void;
 };
 export type ModelState = {
   floor: Floor;
@@ -22,7 +25,8 @@ export type ModelState = {
   selected: number | null;
   statuses: Record<number, Booking>;
 };
-type CameraView = "overview" | "courtyard";
+export type CameraView = "overview" | "courtyard" | "street" | "gallery";
+export type NavigationMode = "move" | "orbit";
 
 export async function createViewer(host: HTMLDivElement, signal: AbortSignal, options: ViewOptions) {
   const [groundUnits, firstUnits] = await Promise.all([
@@ -38,7 +42,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     powerPreference: "low-power",
   });
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(32, 1, 0.35, 1200);
+  const camera = new T.PerspectiveCamera(32, 1, 0.15, 1200);
   const controls = new OrbitControls(camera, canvas);
   let frame = 0,
     closed = false;
@@ -65,10 +69,12 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     renderer.shadowMap.needsUpdate = true;
     renderer.toneMapping = T.NeutralToneMapping;
     renderer.toneMappingExposure = 1;
-    scene.background = new T.Color("#e0ded8");
+    const studioBackground = new T.Color("#183a30");
+    const skylineBackground = new T.Color("#cfddde");
+    scene.background = studioBackground;
     canvas.setAttribute(
       "aria-label",
-      "Interactive architectural scale model of Naya Baazar. Arrow keys rotate, plus and minus zoom, and Home restores the overview.",
+      "Interactive Naya Baazar market. Drag to move. Two fingers pan or pinch to zoom. Use WASD to move, Q and E to turn, plus and minus to zoom and Home for the overview.",
     );
     canvas.setAttribute("role", "img");
     canvas.tabIndex = 0;
@@ -91,15 +97,20 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
 
     const backdrop = new T.Mesh(
       new T.PlaneGeometry(2200, 2200),
-      new T.MeshStandardMaterial({ color: "#c9c8c6", roughness: 1 }),
+      new T.MeshStandardMaterial({ color: "#264838", roughness: 1 }),
     );
     backdrop.rotation.x = -Math.PI / 2;
     backdrop.position.y = -1.1;
     backdrop.receiveShadow = true;
     scene.add(backdrop);
-    const { boardOutline } = buildMarket(scene);
-    const ground = buildStorey(groundUnits, "ground"),
-      first = buildStorey(firstUnits, "first");
+    const { boardOutline, activity } = buildMarket(scene, groundUnits, firstUnits);
+    const boardBounds = new T.Box2().setFromPoints(boardOutline);
+    const horizon = walkingHorizon(() => { if (!closed) render(); });
+    horizon.visible = false;
+    scene.add(horizon);
+    const refreshMaterials = () => queueMicrotask(() => { if (!closed) render(); });
+    const ground = buildStorey(groundUnits, "ground", refreshMaterials),
+      first = buildStorey(firstUnits, "first", refreshMaterials);
     scene.add(ground.group, first.group);
     // The soft contact immediate to a model on a worktop stays fixed as the camera orbits.
     scene.add(contactShadow([boardOutline], -1.09, 1.15, 0.26));
@@ -107,11 +118,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     controls.enableDamping = false;
     controls.enablePan = true;
     controls.screenSpacePanning = false;
-    controls.minDistance = 9;
-    controls.maxDistance = 600;
-    controls.minPolarAngle = 0.12;
-    controls.maxPolarAngle = Math.PI * 0.45;
-    controls.touches.ONE = T.TOUCH.ROTATE;
     controls.touches.TWO = T.TOUCH.DOLLY_PAN;
     controls.zoomSpeed = 0.85;
     const raycaster = new T.Raycaster(),
@@ -123,18 +129,72 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     const centre = new T.Box3().setFromPoints(framingPoints).getCenter(new T.Vector3());
     let fittedDistance = 190;
     let preset: CameraView | null = "overview";
+    let location: CameraView = "overview";
+    let mode: NavigationMode = "move";
+    const paths: Partial<Record<Floor, ReturnType<typeof walkableFloor>>> = {};
+    const previousEye = new T.Vector2();
+    let activityEnabled = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let visible = true;
+    let dirty = true;
+    let activityTime = 0;
+    let lastTick = 0;
+    let lastDoorFrame = 0;
+    let doorsMoving = false;
     let state: ModelState = { floor: "ground", entire: true, selected: null, statuses: {} };
     let lastState: ModelState | undefined;
     let outline: T.Mesh | undefined;
     const highlightMaterial = new T.MeshBasicMaterial({ color: "#d6a546", depthTest: true });
     cleanups.push(() => highlightMaterial.dispose());
-    function render() {
-      if (closed || frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (!closed) renderer.render(scene, camera);
-      });
+    function queueFrame() {
+      if (!closed && !frame && visible && !document.hidden) frame = requestAnimationFrame(drawFrame);
     }
+    function drawFrame(now: number) {
+      frame = 0;
+      if (closed || document.hidden || !visible) return;
+      if (activityEnabled && (!lastTick || now - lastTick >= 1000 / 30 - 1)) {
+        if (lastTick) activityTime += Math.min((now - lastTick) / 1000, 0.15);
+        lastTick = now;
+        activity.update(activityTime);
+        dirty = true;
+      }
+      if (dirty || (doorsMoving && now - lastDoorFrame >= 1000 / 30 - 1)) {
+        const step = activityEnabled && lastDoorFrame ? Math.min((now - lastDoorFrame) / 1000, 0.1) : 1;
+        lastDoorFrame = now;
+        const groundMoving = ground.updateDoors(camera.position, step);
+        const upperMoving = first.updateDoors(camera.position, step);
+        doorsMoving = groundMoving || upperMoving;
+        activity.setCameraPosition(camera.position);
+        renderer.render(scene, camera);
+        dirty = false;
+      }
+      if (activityEnabled || doorsMoving) queueFrame();
+    }
+    function render() {
+      dirty = true;
+      queueFrame();
+    }
+    function setActivityEnabled(enabled: boolean) {
+      activityEnabled = enabled;
+      lastTick = 0;
+      render();
+    }
+    function visibilityChanged() {
+      lastTick = 0;
+      if (document.hidden || !visible) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      } else render();
+    }
+    document.addEventListener("visibilitychange", visibilityChanged);
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      visibilityChanged();
+    });
+    visibilityObserver.observe(host);
+    cleanups.push(() => {
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      visibilityObserver.disconnect();
+    });
     function overview() {
       // On a phone, look further along the avenue so the long board fills a portrait frame.
       const wide = T.MathUtils.smoothstep(camera.aspect, 0.8, 1.9);
@@ -178,6 +238,27 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       camera.position.copy(controls.target).add(offset);
       controls.update();
     }
+    function onFoot() { return location === "street" || location === "gallery"; }
+    function setNavigationMode(next: NavigationMode) {
+      mode = next;
+      controls.mouseButtons.LEFT = mode === "move" ? T.MOUSE.PAN : T.MOUSE.ROTATE;
+      controls.mouseButtons.RIGHT = mode === "move" ? T.MOUSE.ROTATE : T.MOUSE.PAN;
+      controls.touches.ONE = mode === "move" ? T.TOUCH.PAN : T.TOUCH.ROTATE;
+      // When walking a right-drag turns the eye in place, without swinging through the glass.
+      controls.enableRotate = !onFoot();
+    }
+    function eyeHeight() {
+      return (location === "gallery" ? shopFloorHeight.first : shopFloorHeight.ground) + 1.58;
+    }
+    function walkingView(upper: boolean) {
+      const eye = upper ? sheetPoint(1124, 747) : sheetPoint(983, 580);
+      // Look slightly outward along the raised arcade to include the shops opposite and the plaza below.
+      const destination = upper ? sheetPoint(1069, 713) : sheetPoint(1049, 617);
+      camera.position.set(eye.x, eyeHeight(), eye.y);
+      controls.target.set(destination.x, eyeHeight() - (upper ? 0.65 : 0.16), destination.y);
+      previousEye.copy(eye);
+      controls.update();
+    }
     const resize = () => {
       const { width, height } = host.getBoundingClientRect();
       if (width < 2 || height < 2) return;
@@ -190,12 +271,32 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     };
     function setView(view: CameraView) {
       preset = view;
+      location = view;
+      const walking = onFoot();
+      horizon.visible = walking;
+      scene.background = walking ? skylineBackground : studioBackground;
+      camera.fov = walking ? 60 : 32;
+      camera.near = walking ? 0.065 : 0.20;
+      camera.updateProjectionMatrix();
+      controls.minDistance = walking ? 1.1 : 7;
+      controls.maxDistance = walking ? 18 : 600;
+      controls.minPolarAngle = walking ? 0.80 : 0.12;
+      controls.maxPolarAngle = walking ? 2.25 : Math.PI * 0.45;
+      controls.panSpeed = walking ? 1.45 : 1;
+      setNavigationMode(mode);
       if (view === "overview") overview();
-      else courtyard();
+      else if (view === "courtyard") courtyard();
+      else walkingView(view === "gallery");
+      options.viewChanged?.(view);
       render();
     }
-    function zoom(factor: number) {
+    function moved() {
+      if (preset === null) return;
       preset = null;
+      options.viewChanged?.(onFoot() ? location : null);
+    }
+    function zoom(factor: number) {
+      moved();
       const offset = camera.position.clone().sub(controls.target);
       offset.setLength(T.MathUtils.clamp(offset.length() / factor, controls.minDistance, controls.maxDistance));
       camera.position.copy(controls.target).add(offset);
@@ -203,20 +304,54 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       render();
     }
     function rotate(step: number) {
-      preset = null;
+      moved();
+      if (onFoot()) { lookAround(step, 0); return; }
       const offset = camera.position.clone().sub(controls.target);
       offset.applyAxisAngle(new T.Vector3(0, 1, 0), step);
       camera.position.copy(controls.target).add(offset);
       controls.update();
       render();
     }
+    function lookAround(yaw: number, pitch: number) {
+      moved();
+      const offset = controls.target.clone().sub(camera.position);
+      const angles = new T.Spherical().setFromVector3(offset);
+      angles.theta += yaw;
+      angles.phi = T.MathUtils.clamp(angles.phi + pitch, 0.96, 2.19);
+      controls.target.copy(camera.position).add(offset.setFromSpherical(angles));
+      controls.update();
+      render();
+    }
+    function constrainCamera() {
+      if (preset === null) {
+        const current = onFoot() ? camera.position : controls.target;
+        let x: number, z: number;
+        if (onFoot()) {
+          const floor = location === "gallery" ? "first" : "ground";
+          paths[floor] ??= walkableFloor(boardBounds, floor, floor === "first" ? firstUnits : groundUnits);
+          const movedEye = paths[floor]!.travel(previousEye, current.x, current.z);
+          x = movedEye.x;
+          z = movedEye.y;
+          previousEye.copy(movedEye);
+        } else {
+          x = T.MathUtils.clamp(current.x, boardBounds.min.x, boardBounds.max.x);
+          z = T.MathUtils.clamp(current.z, boardBounds.min.y, boardBounds.max.y);
+        }
+        const correction = new T.Vector3(x - current.x, onFoot() ? eyeHeight() - current.y : 0, z - current.z);
+        camera.position.add(correction);
+        controls.target.add(correction);
+      }
+      render();
+    }
     function update(next: ModelState) {
       state = next;
       const showUpper = next.entire || next.floor === "first";
+      activity.setUpperVisible(showUpper);
       if (first.group.visible !== showUpper) {
         first.group.visible = showUpper;
         renderer.shadowMap.needsUpdate = true;
       }
+      if (!showUpper && location === "gallery") setView("street");
       if (lastState?.statuses !== next.statuses) {
         ground.color(next.statuses);
         first.color(next.statuses);
@@ -237,8 +372,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
           const y = (next.floor === "first" ? 2 : 1) * levelHeight + 0.24;
           outline = roofOutline(unit, y, highlightMaterial);
           scene.add(outline);
-          if (next.selected !== lastState?.selected && camera.position.distanceTo(controls.target) < fittedDistance / 1.65) {
-            preset = null;
+          if (!onFoot() && next.selected !== lastState?.selected && camera.position.distanceTo(controls.target) < fittedDistance / 1.65) {
+            moved();
             const offset = camera.position.clone().sub(controls.target);
             controls.target.set(unit.centre.x, y, unit.centre.y);
             camera.position.copy(controls.target).add(offset);
@@ -266,13 +401,19 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     }
     const pointers = new Set<number>();
     let start: { x: number; y: number; id: number } | null = null,
+      looking: { x: number; y: number; id: number } | null = null,
       dragged = false;
     function down(e: PointerEvent) {
+      canvas.focus({ preventScroll: true });
       pointers.add(e.pointerId);
       if (pointers.size > 1) {
         dragged = true;
         start = null;
+        looking = null;
         return;
+      }
+      if (onFoot() && ((mode === "orbit" && e.button === 0) || (mode === "move" && e.button === 2))) {
+        looking = { id: e.pointerId, x: e.clientX, y: e.clientY };
       }
       if (e.button === 0) {
         start = { x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -281,12 +422,20 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     }
     function move(e: PointerEvent) {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) dragged = true;
+      if (looking?.id === e.pointerId) {
+        const scale = Math.PI * 0.72 / Math.max(280, canvas.clientHeight);
+        lookAround(-(e.clientX - looking.x) * scale, (e.clientY - looking.y) * scale);
+        looking.x = e.clientX;
+        looking.y = e.clientY;
+        return;
+      }
       if (e.pointerType !== "mouse" || pointers.size) return;
       const id = pick(e);
       canvas.style.cursor = id ? "pointer" : "grab";
     }
     function up(e: PointerEvent) {
       pointers.delete(e.pointerId);
+      looking = null;
       if (
         start?.id === e.pointerId &&
         !dragged &&
@@ -300,17 +449,47 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     }
     function cancel(e: PointerEvent) {
       pointers.delete(e.pointerId);
+      looking = null;
       start = null;
       dragged = true;
     }
     function keyboard(e: KeyboardEvent) {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === "+" || e.key === "=") zoom(1.3);
-      else if (e.key === "-") zoom(1 / 1.3);
-      else if (e.key === "ArrowLeft" || e.key === "ArrowRight") rotate(e.key === "ArrowLeft" ? -0.15 : 0.15);
-      else if (e.key === "Home") setView("overview");
+      const key = e.key.toLowerCase();
+      if (key === "+" || key === "=") zoom(1.3);
+      else if (key === "-") zoom(1 / 1.3);
+      else if (key === "q" || key === "e" || (mode === "orbit" && (key === "arrowleft" || key === "arrowright"))) {
+        rotate(key === "q" || key === "arrowleft" ? 0.15 : -0.15);
+      } else if (["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key)) {
+        moved();
+        const forward = controls.target.clone().sub(camera.position);
+        forward.y = 0;
+        forward.normalize();
+        const right = forward.clone().cross(camera.up);
+        const step = onFoot() ? 0.7 : camera.position.distanceTo(controls.target) * 0.035;
+        const delta = key === "w" || key === "arrowup" ? forward :
+          key === "s" || key === "arrowdown" ? forward.negate() :
+          key === "a" || key === "arrowleft" ? right.negate() : right;
+        camera.position.addScaledVector(delta, step);
+        controls.target.addScaledVector(delta, step);
+        controls.update();
+      } else if (key === "home") setView("overview");
       else return;
       e.preventDefault();
+    }
+    let lastPrecisionScroll = -Infinity;
+    function precisionScroll(e: WheelEvent) {
+      // Trackpads report fine pixel deltas and send ctrl+wheel for a physical pinch.
+      // Keep the same pan gesture through the larger deltas of an accelerating scroll.
+      const precision = e.deltaMode === WheelEvent.DOM_DELTA_PIXEL &&
+        (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) < 54 || !Number.isInteger(e.deltaY) ||
+          e.timeStamp - lastPrecisionScroll < 180);
+      if (!precision || e.ctrlKey || e.metaKey) return;
+      lastPrecisionScroll = e.timeStamp;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      moved();
+      controls.pan(-e.deltaX, -e.deltaY);
     }
     function contextLost(e: Event) {
       e.preventDefault();
@@ -321,6 +500,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", cancel);
     canvas.addEventListener("keydown", keyboard);
+    canvas.addEventListener("wheel", precisionScroll, { capture: true, passive: false });
     canvas.addEventListener("webglcontextlost", contextLost);
     cleanups.push(() => {
       canvas.removeEventListener("pointerdown", down);
@@ -328,25 +508,150 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointercancel", cancel);
       canvas.removeEventListener("keydown", keyboard);
+      canvas.removeEventListener("wheel", precisionScroll, true);
       canvas.removeEventListener("webglcontextlost", contextLost);
     });
-    controls.addEventListener("change", render);
-    controls.addEventListener("start", () => { preset = null; });
+    let interacting = false;
+    controls.addEventListener("start", () => { interacting = true; });
+    controls.addEventListener("end", () => { interacting = false; });
+    controls.addEventListener("change", () => {
+      if (interacting) moved();
+      constrainCamera();
+    });
     const observer = new ResizeObserver(resize);
     observer.observe(host);
     cleanups.push(() => observer.disconnect());
     resize();
+    setView("overview");
     update(state);
+    void activity.facesReady.then(render);
     function setAvailabilityVisible(show: boolean) {
       ground.setAvailabilityVisible(show);
       first.setAvailabilityVisible(show);
       render();
     }
-    return { update, zoom, setView, setAvailabilityVisible, dispose };
+    return { update, zoom, setView, setAvailabilityVisible, setNavigationMode, setActivityEnabled, dispose };
   } catch (error) {
     dispose();
     throw error;
   }
+}
+
+/** Floor-level navigation follows walkways and passes through the entrances into individual shop aisles. */
+function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
+  const ppm = 6;
+  const size = bounds.getSize(new T.Vector2());
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(size.x * ppm);
+  canvas.height = Math.ceil(size.y * ppm);
+  const c = canvas.getContext("2d", { willReadFrequently: true })!;
+  c.setTransform(ppm, 0, 0, ppm, -bounds.min.x * ppm, -bounds.min.y * ppm);
+  c.fillStyle = floor === "ground" ? "white" : "black";
+  c.fillRect(bounds.min.x, bounds.min.y, size.x, size.y);
+  function polygon(points: T.Vector2[]) {
+    c.beginPath();
+    c.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) c.lineTo(points[i].x, points[i].y);
+    c.closePath();
+    c.fill();
+  }
+  const glass = glassSetback[floor];
+  for (const wing of wingBoundaries) {
+    c.fillStyle = "black";
+    polygon(wing.points);
+    c.fillStyle = "white";
+    for (const bay of retailBays(wing, units)) {
+      const half = bay.width / 2;
+      const doorway = shopEntrance(bay.width);
+      function band(left: number, right: number, from: number, to: number) {
+        const front: T.Vector2[] = [], back: T.Vector2[] = [];
+        const subdivisions = Math.ceil((right - left) / 0.7);
+        for (let i = 0; i <= subdivisions; i++) {
+          const x = T.MathUtils.lerp(left, right, i / subdivisions);
+          front.push(bay.at(x, from));
+          back.push(bay.at(x, to));
+        }
+        polygon(front.concat(back.reverse()));
+      }
+      // A small overlap joins neighbouring bays even on tight rail curves.
+      band(-half - 0.06, half + 0.06, floor === "first" ? 0.25 : -0.26, glass - 0.20);
+      band(doorway.center - doorway.halfWidth + 0.13, doorway.center + doorway.halfWidth - 0.13,
+        glass - 0.36, glass + 0.46);
+      band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42);
+      // At a sharp corner an offset aisle can fold over its neighbour. The door itself
+      // always has a straight approach perpendicular to its centre, including at these bends.
+      const outside = bay.at(doorway.center, glass - 0.58);
+      const inside = bay.at(doorway.center, glass + 1.1);
+      c.beginPath();
+      c.moveTo(outside.x, outside.y);
+      c.lineTo(inside.x, inside.y);
+      c.strokeStyle = "white";
+      c.lineWidth = Math.min(0.5, 2 * doorway.halfWidth - 0.20);
+      c.stroke();
+    }
+  }
+  const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
+  const width = canvas.width, height = canvas.height;
+  function allowed(x: number, z: number) {
+    const i = Math.floor((x - bounds.min.x) * ppm), j = Math.floor((z - bounds.min.y) * ppm);
+    return i > 1 && j > 1 && i < width - 2 && j < height - 2 && pixels[4 * (j * width + i)] > 100;
+  }
+  const position = new T.Vector2();
+  return {
+    travel(from: T.Vector2, x: number, z: number) {
+      position.copy(from);
+      const dx = x - from.x, dz = z - from.y;
+      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) * ppm));
+      // Sample the segment to avoid jumping through windows on long pointer moves; slide along walls.
+      for (let i = 0; i < Math.min(steps, 180); i++) {
+        const nextX = position.x + dx / steps, nextZ = position.y + dz / steps;
+        if (allowed(nextX, nextZ)) position.set(nextX, nextZ);
+        else if (allowed(nextX, position.y)) position.x = nextX;
+        else if (allowed(position.x, nextZ)) position.y = nextZ;
+        else break;
+      }
+      return position;
+    },
+  };
+}
+
+/** A distant belt of trees sampled from the project render finishes the horizon at pedestrian height. */
+function walkingHorizon(changed: () => void) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 256;
+  const c = canvas.getContext("2d")!;
+  const sky = c.createLinearGradient(0, 0, 0, 210);
+  sky.addColorStop(0, "#cfddde");
+  sky.addColorStop(0.7, "#e9e5ce");
+  sky.addColorStop(0.72, "#6f8069");
+  sky.addColorStop(1, "#274a34");
+  c.fillStyle = sky;
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  const map = new T.CanvasTexture(canvas);
+  map.colorSpace = T.SRGBColorSpace;
+  map.wrapS = T.MirroredRepeatWrapping;
+  map.repeat.x = 8;
+  const img = new Image();
+  img.onload = () => {
+    // The west half of the aerial photograph contains a continuous tree line and open sky.
+    c.drawImage(img, img.width * 0.05, img.height * 0.015, img.width * 0.35, img.height * 0.29,
+      0, 115, canvas.width, 141);
+    const blend = c.createLinearGradient(0, 114, 0, 157);
+    blend.addColorStop(0, "#dde2d6");
+    blend.addColorStop(1, "rgba(221,226,214,0)");
+    c.fillStyle = blend;
+    c.fillRect(0, 114, canvas.width, 43);
+    map.needsUpdate = true;
+    changed();
+  };
+  img.src = "/media/render-09-small.webp";
+  const skyMesh = new T.Mesh(new T.CylinderGeometry(175, 175, 96, 64, 1, true),
+    new T.MeshBasicMaterial({ map, side: T.BackSide, toneMapped: false, depthWrite: false }));
+  skyMesh.position.y = 16;
+  skyMesh.renderOrder = -2;
+  map.addEventListener("dispose", () => { img.onload = null; });
+  return skyMesh;
 }
 
 /** A small baked contact texture adds ambient occlusion without a per-frame postprocess. */

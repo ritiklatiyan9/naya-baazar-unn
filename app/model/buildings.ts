@@ -1,6 +1,8 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type Unit } from "./geometry";
+import { addRetail } from "./retail";
+import { glassSetback } from "./retailFrontages";
 import { wingBoundaries, type Boundary } from "./wings";
 
 const shades = {
@@ -9,9 +11,6 @@ const shades = {
   lining: "#e2d9c7",
   coping: "#323b40",
   fasciaShadow: "#676560",
-  bronze: "#625c50",
-  glassTop: new T.Color("#343c42"),
-  glassBottom: new T.Color("#665f57"),
 };
 const available = new T.Color("#88b697");
 const booked = new T.Color("#ce756d");
@@ -53,22 +52,14 @@ function roofFinish() {
 
 class Surface {
   vertices: number[] = [];
-  colors: number[] = [];
-  quad(a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3, lower?: T.Color, upper?: T.Color) {
+  quad(a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3) {
     const corners = [a, b, c, a, c, d];
-    corners.forEach((p, i) => {
-      this.vertices.push(p.x, p.y, p.z);
-      if (lower && upper) {
-        const tint = i === 2 || i === 4 || i === 5 ? upper : lower;
-        this.colors.push(tint.r, tint.g, tint.b);
-      }
-    });
+    corners.forEach(p => this.vertices.push(p.x, p.y, p.z));
   }
   build(parent: T.Group, material: T.MeshStandardMaterial, shadows: boolean) {
     if (!this.vertices.length) return;
     const geom = new T.BufferGeometry();
     geom.setAttribute("position", new T.Float32BufferAttribute(this.vertices, 3));
-    if (this.colors.length) geom.setAttribute("color", new T.Float32BufferAttribute(this.colors, 3));
     geom.computeVertexNormals();
     const mesh = new T.Mesh(geom, material);
     mesh.castShadow = shadows;
@@ -90,13 +81,12 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   const soffits = new Surface();
   const coping = new Surface();
   const reveals = new Surface();
-  const windows = new Surface();
   const details = new Parts();
   const plaster = matte(shades.plaster);
   const fascia = matte(shades.edge);
   const graphite = matte(shades.coping);
   const tiled = roofFinish();
-  const recess = upper ? 1.23 : 1.63;
+  const recess = upper ? glassSetback.first : glassSetback.ground;
   const low = bottom + 0.14;
   const high = deck - (upper ? 0.73 : 0.55);
   const parapet = deck + (upper ? 0.40 : 0.48);
@@ -121,7 +111,6 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
 
     let distance = 0;
     let nextPier = 0;
-    let nextMullion = 0;
     const inside = points.map((_, i) => inset(wing, i, recess));
     const count = points.length;
     for (let i = 0; i < count; i++) {
@@ -148,14 +137,12 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
 
       if (wing.publicEdge[i]) {
         reveals.quad(at(a, high - 0.07), at(b, high - 0.07), at(b, high), at(a, high));
-        windows.quad(at(ai, low), at(bi, low), at(bi, high), at(ai, high), shades.glassBottom, shades.glassTop);
         soffits.quad(at(a, high), at(b, high), at(bi, high), at(ai, high));
         // The tiled balcony below belongs to the lower storey. Provide the same walking surface at street level.
         if (!upper) soffits.quad(at(ai, low + 0.012), at(bi, low + 0.012), at(b, low + 0.012), at(a, low + 0.012));
 
         if (!wing.publicEdge[(i + count - 1) % count]) {
           nextPier = distance + 0.5;
-          nextMullion = distance + 1.55;
         }
         const place = (offset: number, setback: number) => {
           const t = (offset - distance) / length;
@@ -163,20 +150,11 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
           return out.addScaledVector(wing.insets[i].clone().lerp(wing.insets[j], t), setback);
         };
         while (nextPier <= distance + length) {
-          const anchor = place(nextPier, upper ? recess - 0.23 : 0.64);
+          const anchor = place(nextPier, 0.34);
           const width = upper ? 0.22 : 0.40;
           details.box(shades.plaster, anchor.x, (low + high) / 2, anchor.y, width, high - low, upper ? 0.32 : 0.47, yaw);
           nextPier += 3.35;
         }
-        while (nextMullion <= distance + length) {
-          const anchor = place(nextMullion, recess - 0.06);
-          details.box(shades.bronze, anchor.x, (low + high) / 2, anchor.y, 0.065, high - low, 0.08, yaw);
-          nextMullion += 1.675;
-        }
-        const sill = upper ? low + 0.30 : low + 0.17;
-        const sa = inset(wing, i, recess - 0.022);
-        const sb = inset(wing, j, recess - 0.022);
-        reveals.quad(at(sa, low), at(sb, low), at(sb, sill), at(sa, sill));
       } else {
         const foot = upper ? bottom : low;
         walls.quad(at(a, foot), at(b, foot), at(b, high), at(a, high));
@@ -191,10 +169,6 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   soffits.build(group, matte(shades.lining), false);
   coping.build(group, graphite, true);
   reveals.build(group, matte(shades.fasciaShadow), false);
-  windows.build(group, new T.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.31, metalness: 0.18, side: T.DoubleSide,
-  }), false);
-
   if (upper) {
     // Access headhouses sit above the marked stair bays; their low tiled caps share the roof finish.
     const cores = [
@@ -226,12 +200,13 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   details.build(group);
 }
 
-export function buildStorey(units: Unit[], floor: Floor) {
+export function buildStorey(units: Unit[], floor: Floor, onMaterialsReady?: () => void) {
   const upper = floor === "first";
   const bottom = (upper ? levelHeight : 0) + 0.14;
   const deck = bottom + levelHeight;
   const group = new T.Group();
   drawShells(group, upper, bottom, deck);
+  const updateDoors = addRetail(group, units, floor, onMaterialsReady);
 
   // Preserve the actual measured unit polygons as pick targets and optional availability overlays.
   const volumes: T.BufferGeometry[] = [];
@@ -267,6 +242,7 @@ export function buildStorey(units: Unit[], floor: Floor) {
   patches.forEach(g => g.dispose());
   return {
     group,
+    updateDoors,
     body,
     units,
     pick(face: T.Face) { return ids[face.a]; },

@@ -188,7 +188,7 @@ function MediaView({view}:{view:"gallery"|"walkthrough"}) {
 
 function getView(): View {
   const hash = window.location.hash.slice(1);
-  return hash === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "layout";
+  return hash.split("/")[0] === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "layout";
 }
 
 export default function ProjectAtlas() {

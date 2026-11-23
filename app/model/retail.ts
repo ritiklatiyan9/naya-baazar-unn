@@ -2,7 +2,7 @@ import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Floor, Unit } from "./geometry";
 import { glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
-import { wingBoundaries } from "./wings";
+import { shellBoundaries, wingBoundaries } from "./wings";
 
 const themes = [
   { name: "THREAD", sub: "CLOTHING ATELIER", sign: "#713c38", wall: "#d1ad9a", accent: "#7e4d45", trim: "#ceae83" },
@@ -353,7 +353,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
   }
   if(floor === "first") {
     // The existing low ivory upstand carries a channel of clear safety glass along each open gallery.
-    for(const wing of wingBoundaries) {
+    for(const wing of shellBoundaries) {
       let run = 0, nextPost = 0;
       for(let i=0;i<wing.points.length;i++){
         if(!wing.publicEdge[i]){ run=0; nextPost=0; continue; }

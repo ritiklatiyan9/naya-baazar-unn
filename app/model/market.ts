@@ -195,7 +195,7 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   disc.receiveShadow = true;
   scene.add(disc);
 
-  [[907, 590], [1164, 701], [274, 512]].forEach(([x, z], i) =>
+  [[907, 590], [1164, 701]].forEach(([x, z], i) =>
     tree(detail, x, z, 3.2 + i * 0.2, i, true));
   [[200, 342], [635, 396], [1000, 254], [1314, 416], [173, 748]].forEach(([x, z], i) =>
     tree(detail, x, z, 3.8 + (i % 2) * 0.5, i + 10, false));

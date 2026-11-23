@@ -2,7 +2,7 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
-import { wingBoundaries } from "./wings";
+import { westPassageWalkway, wingBoundaries } from "./wings";
 import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
@@ -590,6 +590,8 @@ function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
       c.stroke();
     }
   }
+  c.fillStyle = "white";
+  polygon(westPassageWalkway);
   const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
   const width = canvas.width, height = canvas.height;
   function allowed(x: number, z: number) {

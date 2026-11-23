@@ -9,6 +9,12 @@ function curve(cx: number, cy: number, dx: number, dy: number, x: number, y: num
   return { end: [x, y], controls: [[cx, cy], [dx, dy]] };
 }
 
+// Opposing gallery edges on the two sides of the western passage, in perimeter order.
+const westPassage = {
+  wing: [[267, 485], [204, 562]],
+  pavilion: [[234, 579], [292, 508]],
+} satisfies Record<"wing" | "pavilion", [Point, Point]>;
+
 // Roof perimeters trace the external walls and the continuous public galleries on the site drawing.
 // Shop boundaries underneath are loaded separately from the measured floor SVGs.
 const wings: WingDrawing[] = [
@@ -38,7 +44,7 @@ const wings: WingDrawing[] = [
     frontage: [
       [754, 449], curve(748, 493, 729, 527, 694, 537),
       curve(673, 544, 650, 542, 621, 536),
-      [312, 476], curve(291, 472, 280, 470, 267, 485), [204, 562],
+      [312, 476], curve(291, 472, 280, 470, ...westPassage.wing[0]), westPassage.wing[1],
       curve(188, 580, 188, 591, 206, 606), [292, 677],
       curve(304, 686, 304, 694, 301, 705), [283, 772],
     ],
@@ -53,13 +59,13 @@ const wings: WingDrawing[] = [
     ],
   },
   {
-    start: [292, 508],
+    start: westPassage.pavilion[1],
     back: [],
     frontage: [
       curve(299, 498, 305, 497, 314, 504), [380, 559],
       curve(391, 568, 392, 578, 383, 589), [331, 653],
       curve(322, 666, 314, 666, 300, 655), [238, 605],
-      curve(227, 597, 226, 588, 234, 579), [292, 508],
+      curve(227, 597, 226, 588, ...westPassage.pavilion[0]), westPassage.pavilion[1],
     ],
   },
 ];
@@ -86,6 +92,10 @@ function sample(drawing: WingDrawing): Boundary {
     }
   }
   points.pop(); // the last run lands exactly on the first vertex
+  return boundary(points, publicEdge);
+}
+
+function boundary(points: T.Vector2[], publicEdge: boolean[]): Boundary {
   const winding = Math.sign(T.ShapeUtils.area(points));
   const normals = points.map((p, i) => {
     const next = points[(i + 1) % points.length];
@@ -99,3 +109,46 @@ function sample(drawing: WingDrawing): Boundary {
 }
 
 export const wingBoundaries = wings.map(sample);
+
+// Keep the shop fronts on their measured outlines. The slabs, parapets and rails
+// follow one continuous perimeter around the joined west wing and pavilion.
+function outsidePassage(wing: Boundary, edge: [Point, Point]) {
+  const [start, end] = edge.map(p => sheetPoint(...p));
+  const first = wing.points.findIndex(p => p.distanceToSquared(end) < 1e-10);
+  const last = wing.points.findIndex(p => p.distanceToSquared(start) < 1e-10);
+  if (first < 0 || last < 0) throw new Error("Western gallery edge is missing from its building outline.");
+  const points = [wing.points[first]];
+  const publicEdge = [];
+  for (let i = first; i !== last;) {
+    publicEdge.push(wing.publicEdge[i]);
+    i = (i + 1) % wing.points.length;
+    points.push(wing.points[i]);
+  }
+  publicEdge.push(true); // exposed end of the link to the opposite gallery
+  return { points, publicEdge };
+}
+
+const [eastWing, westWing, eastPavilion, westPavilion] = wingBoundaries;
+const outerWing = outsidePassage(westWing, westPassage.wing);
+const outerPavilion = outsidePassage(westPavilion, westPassage.pavilion);
+const joinedWest = boundary(
+  outerWing.points.concat(outerPavilion.points),
+  outerWing.publicEdge.concat(outerPavilion.publicEdge),
+);
+export const shellBoundaries = [eastWing, joinedWest, eastPavilion];
+
+// Give walkers clearance from the two exposed ends and overlap the walkable
+// gallery on either side of the link so the navigation masks meet at both mouths.
+function landing(edge: [Point, Point], opposite: [Point, Point]) {
+  const ends = edge.map(p => sheetPoint(...p));
+  return ends.map((end, i) => {
+    const alongGallery = ends[1 - i].clone().sub(end).normalize();
+    const intoGallery = end.clone().sub(sheetPoint(...opposite[1 - i])).normalize();
+    return end.clone().addScaledVector(alongGallery, 0.32).addScaledVector(intoGallery, 0.70);
+  });
+}
+
+export const westPassageWalkway = [
+  ...landing(westPassage.wing, westPassage.pavilion),
+  ...landing(westPassage.pavilion, westPassage.wing),
+];

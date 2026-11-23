@@ -3,7 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type Unit } from "./geometry";
 import { addRetail } from "./retail";
 import { glassSetback } from "./retailFrontages";
-import { wingBoundaries, type Boundary } from "./wings";
+import { shellBoundaries, type Boundary } from "./wings";
 
 const shades = {
   plaster: "#efe8d9",
@@ -97,7 +97,7 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
     group.add(mesh);
   }
 
-  for (const wing of wingBoundaries) {
+  for (const wing of shellBoundaries) {
     const points = wing.points;
     // Long straight runs need regular facade bays, but only their endpoints belong in a roof triangulation.
     const roofCorners = points.filter((p, i) => {

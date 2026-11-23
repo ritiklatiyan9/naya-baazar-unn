@@ -195,6 +195,7 @@ export default function ProjectAtlas() {
   const [view,setView] = useState<View>("layout");
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
+  const [modelDirectory,setModelDirectory] = useState(false);
   const [managerOpen,setManagerOpen] = useState(false);
   const [menu,setMenu] = useState(false);
   const [notice,setNotice] = useState("");
@@ -218,7 +219,9 @@ export default function ProjectAtlas() {
   function select(id:number) {
     const unit = plan.find(u=>u.id===id);
     if(unit){setFloor(unit.floor as Floor);setSelected(id);}
-    if(window.matchMedia("(max-width: 800px)").matches && !document.querySelector("dialog[open]")) directoryRef.current?.scrollIntoView({block:"start"});
+    if(view==="model") setModelDirectory(true);
+    if(window.matchMedia("(max-width: 800px)").matches && !document.fullscreenElement && !document.querySelector("dialog[open]"))
+      window.requestAnimationFrame(()=>directoryRef.current?.scrollIntoView({block:"start"}));
   }
   async function save(id:number,status:Status,version:number) {
     const response=await fetch("/api/shops/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,version})});
@@ -253,20 +256,20 @@ export default function ProjectAtlas() {
     <main id="main-content" tabIndex={-1} className="page-wrap"><Hero/>
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
       {inLayout && <section className="layout-view"><div className="section-heading explorer-heading">
-        <div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>Floor plan explorer</h2><p className="intro">Select a shop to explore its dimensions and availability.</p></div>
+        <div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>{view==="model"?"Architectural model":"Floor plan explorer"}</h2><p className="intro">{view==="model"?"Explore the courtyard and shopfronts, or select a shop for its dimensions.":"Select a shop to explore its dimensions and availability."}</p></div>
         <div className="explorer-actions"><nav className="mode-switch" aria-label="Layout view">
           <a href="#layout" aria-current={view==="layout"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
           <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>
         </nav><a className="outline-button download" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/>Download plan</a></div>
       </div>
         {network==="error" && <div className="offline" role="status"><Icon name="info"/><span>{Object.keys(inventory).length?"Availability could not refresh. Showing the last received update.":"Shop availability is temporarily unavailable. You can still explore the plans and dimensions."}</span><button onClick={()=>void refresh()}>Retry</button></div>}
-        <div className="explorer-grid">
+        <div className={"explorer-grid" + (view==="model" && !modelDirectory?" model-wide":"")}>
           {view === "model"
             ? <Suspense fallback={<div className="model-loading" role="status">Loading 3D model…</div>}>
-                <ThreePlan onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
+                <ThreePlan directoryOpen={modelDirectory} onToggleDirectory={()=>setModelDirectory(open=>!open)} onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
               </Suspense>
             : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
-          <div className="directory-wrap" ref={directoryRef}><Directory floor={floor} inventory={inventory} selected={selected} user={user} onSelect={select} onBack={()=>setSelected(null)} onManage={openManagement}/></div>
+          <div id="layout-directory" className="directory-wrap" hidden={view==="model" && !modelDirectory} ref={directoryRef}><Directory floor={floor} inventory={inventory} selected={selected} user={user} onSelect={select} onBack={()=>setSelected(null)} onManage={openManagement}/></div>
         </div>
       </section>}
       {view==="details" && <ProjectDetails/>}

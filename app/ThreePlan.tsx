@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import register from "../src/plan-data.json";
 import type { ModelState, createViewer } from "./model/viewer";
 import type { Booking, Floor } from "./model/geometry";
 import "./ThreePlan.css";
 
 type Props = {
+  directoryOpen: boolean;
+  onToggleDirectory: () => void;
   floor: Floor;
   onFloor: (floor: Floor) => void;
   statuses: Record<number, Booking>;
@@ -17,13 +18,13 @@ type Props = {
 };
 type Controller = Awaited<ReturnType<typeof createViewer>>;
 const names = { ground: "Ground floor", first: "First floor" };
-function Glyph({ name }: { name: "minus" | "plus" | "reset" | "street" | "orbit" | "expand" }) {
+function Glyph({ name }: { name: "minus" | "plus" | "reset" | "street" | "directory" | "expand" }) {
   const paths = {
     minus: "M5 12h14",
     plus: "M5 12h14M12 5v14",
     reset: "M3 10V4m0 6h6M4 9a8.5 8.5 0 1 1 1 8",
     street: "M3 20V8l6-3v15m0-10 6-4v14m0-11 6-3v14M1 20h22",
-    orbit: "M8 5c-4 1-6 3-6 5 0 4 7 6 13 5m0-3 5 2-4 4M12 4l6 3v6l-6 3-6-3V7z",
+    directory: "M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1",
     expand: "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5",
   };
   return (
@@ -52,13 +53,14 @@ export default function ThreePlan(props: Props) {
   const [attempt, setAttempt] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
-  const [hover, setHover] = useState<{ id: number; x: number; y: number } | null>(null);
-  const latest = useRef({ onSelect, floor, selected });
+  const [availability, setAvailability] = useState(false);
+  const latest = useRef({ onSelect, availability });
   const effectiveEntire = entire && selected === null;
   const state = useRef<ModelState>({ floor, selected, statuses, entire: effectiveEntire });
   useEffect(() => {
-    latest.current = { onSelect, floor, selected };
-  }, [onSelect, floor, selected]);
+    latest.current = { onSelect, availability };
+    controller.current?.setAvailabilityVisible(availability);
+  }, [onSelect, availability]);
   useEffect(() => {
     state.current = { floor, selected, statuses, entire: effectiveEntire };
     controller.current?.update(state.current);
@@ -68,16 +70,12 @@ export default function ThreePlan(props: Props) {
     const node = host.current,
       abort = new AbortController();
     setPhase("loading");
-    setHover(null);
     void import("./model/viewer")
       .then(({ createViewer }) =>
         createViewer(node, abort.signal, {
           select(id) {
             setEntire(false);
             latest.current.onSelect(id);
-          },
-          hover(id, x, y) {
-            if (!abort.signal.aborted) setHover(id === null ? null : { id, x, y });
           },
           failed() {
             if (!abort.signal.aborted) {
@@ -95,6 +93,7 @@ export default function ThreePlan(props: Props) {
         }
         controller.current = viewer;
         viewer.update(state.current);
+        viewer.setAvailabilityVisible(latest.current.availability);
         setPhase("ready");
       })
       .catch(() => {
@@ -114,7 +113,6 @@ export default function ThreePlan(props: Props) {
     document.addEventListener("fullscreenchange", changed);
     return () => document.removeEventListener("fullscreenchange", changed);
   }, []);
-  const units = register.filter((unit) => effectiveEntire || unit.floor === floor);
   return (
     <section className="three-plan" ref={panel} aria-label="Interactive 3D shop model">
       <div className="three-head">
@@ -141,7 +139,18 @@ export default function ThreePlan(props: Props) {
             Both floors
           </button>
         </div>
-        {canExpand && (
+        <div className="three-head-actions">
+          {phase === "ready" && <button
+            type="button"
+            className="three-camera-preset"
+            onClick={() => controller.current?.setView("courtyard")}
+          >
+            <Glyph name="street" />Courtyard view
+          </button>}
+          {!fullscreen && <button type="button" className="three-directory" onClick={props.onToggleDirectory} aria-controls="layout-directory" aria-expanded={props.directoryOpen}>
+            <Glyph name="directory" />Shop directory
+          </button>}
+          {canExpand && (
           <button
             className="three-expand"
             onClick={() => {
@@ -153,7 +162,8 @@ export default function ThreePlan(props: Props) {
             <Glyph name="expand" />
             <span>{fullscreen ? "Close" : "Expand"}</span>
           </button>
-        )}
+          )}
+        </div>
       </div>
       <div className="three-stage">
         <div className="three-host" ref={host} />
@@ -176,28 +186,6 @@ export default function ThreePlan(props: Props) {
           </div>
         )}
         {phase === "ready" && (
-          <>
-            <div className="three-camera">
-              <button
-                onClick={() => controller.current?.setView("courtyard")}
-                title="View the courtyard and street furniture"
-              >
-                <Glyph name="street" />
-                Courtyard view
-              </button>
-            </div>
-            {hover && (
-              <div
-                className="three-tooltip"
-                style={{
-                  left: Math.max(62, Math.min(hover.x, (host.current?.clientWidth ?? 400) - 62)),
-                  top: Math.max(47, hover.y - 8),
-                }}
-              >
-                <b>Shop {hover.id}</b>
-                <span>{statuses[hover.id] ?? "Unconfirmed"}</span>
-              </div>
-            )}
             <div className="three-tools">
               <button aria-label="Zoom out 3D model" onClick={() => controller.current?.zoom(1 / 1.4)}>
                 <Glyph name="minus" />
@@ -213,11 +201,21 @@ export default function ThreePlan(props: Props) {
                 <Glyph name="reset" />
               </button>
             </div>
-          </>
         )}
       </div>
       <div className="three-bottom">
-        <div className="three-legend">
+        <label className="three-availability">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={availability}
+            disabled={phase !== "ready" || Object.keys(statuses).length === 0}
+            onChange={event => setAvailability(event.target.checked)}
+          />
+          <span className="three-switch" aria-hidden="true" />
+          Show availability
+        </label>
+        {availability && <div className="three-legend">
           <span>
             <i />
             Available
@@ -226,28 +224,7 @@ export default function ThreePlan(props: Props) {
             <i />
             Booked
           </span>
-        </div>
-        <label className="three-picker">
-          <span className="sr">Select a shop in 3D</span>
-          <select
-            value={selected ?? ""}
-            onChange={(e) => {
-              if (e.target.value) {
-                setEntire(false);
-                onSelect(Number(e.target.value));
-              }
-            }}
-          >
-            <option value="" disabled>
-              Select a shop
-            </option>
-            {units.map((u) => (
-              <option key={u.id} value={u.id}>
-                Shop {u.id} · {names[u.floor as Floor]}
-              </option>
-            ))}
-          </select>
-        </label>
+        </div>}
       </div>
       <p className="three-caption">
         Drag to orbit, scroll or pinch to zoom. Shop footprints follow the drawings. Heights and streetscape

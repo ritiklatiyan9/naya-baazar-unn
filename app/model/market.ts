@@ -1,5 +1,6 @@
 import * as T from "three";
 import { Parts, sheetPoint } from "./geometry";
+import { asphaltTexture, courtyardRosette, paverTexture, turfTexture } from "./siteMaterials";
 
 function surface(shape: T.Shape, color: string, thickness: number, y: number, texture?: T.Texture) {
   const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 18 });
@@ -7,7 +8,7 @@ function surface(shape: T.Shape, color: string, thickness: number, y: number, te
   geometry.translate(0, y, 0);
   const top = new T.MeshStandardMaterial({ color, roughness: 0.94, map: texture ?? null });
   const side = new T.MeshStandardMaterial({
-    color: new T.Color(color).multiplyScalar(0.85),
+    color: new T.Color(color).multiplyScalar(0.78),
     roughness: 0.93,
   });
   const mesh = new T.Mesh(geometry, [top, side]);
@@ -31,85 +32,17 @@ class SiteShape extends T.Shape {
     return this.bezierCurveTo(a.x, -a.y, b.x, -b.y, c.x, -c.y);
   }
 }
-function paverTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 256;
-  const c = canvas.getContext("2d")!;
-  c.fillStyle = "#a89d89";
-  c.fillRect(0, 0, 256, 256);
-  for (let row = 0; row < 8; row++)
-    for (let col = -1; col < 5; col++) {
-      const v = 221 + ((row * 7 + col * 3 + 19) % 9);
-      c.fillStyle = "rgb(" + v + "," + (v - 6) + "," + (v - 18) + ")";
-      c.fillRect(col * 64 + (row % 2) * 32 + 1, row * 32 + 1, 63, 31);
-    }
-  const t = new T.CanvasTexture(canvas);
-  t.colorSpace = T.SRGBColorSpace;
-  t.wrapS = t.wrapT = T.RepeatWrapping;
-  t.repeat.set(0.22, 0.22);
-  return t;
-}
-
-function sunburst() {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 512;
-  const c = canvas.getContext("2d")!,
-    center = 256;
-  c.fillStyle = "#dccaab";
-  c.fillRect(0, 0, 512, 512);
-  function circle(r: number, fill: string) {
-    c.beginPath();
-    c.arc(center, center, r, 0, Math.PI * 2);
-    c.fillStyle = fill;
-    c.fill();
-  }
-  circle(254, "#705744");
-  circle(247, "#e2c58f");
-  circle(237, "#8c7052");
-  circle(229, "#eee3ca");
-  for (let i = 0; i < 32; i++) {
-    const a = (i * Math.PI) / 16,
-      b = a + Math.PI / 32;
-    c.beginPath();
-    c.moveTo(center + Math.sin(a) * 224, center + Math.cos(a) * 224);
-    c.lineTo(center + Math.sin(b) * 210, center + Math.cos(b) * 210);
-    c.lineTo(center + Math.sin(a + Math.PI / 16) * 224, center + Math.cos(a + Math.PI / 16) * 224);
-    c.fillStyle = "#a78256";
-    c.fill();
-  }
-  circle(174, "#aa8253");
-  circle(168, "#eee2c6");
-  for (let i = 0; i < 16; i++) {
-    const a = (i * Math.PI) / 8,
-      r = i % 2 ? 102 : 152;
-    const tip = [center + Math.sin(a) * r, center + Math.cos(a) * r];
-    for (const side of [-1, 1]) {
-      const b = a + (side * Math.PI) / 16;
-      c.beginPath();
-      c.moveTo(center, center);
-      c.lineTo(tip[0], tip[1]);
-      c.lineTo(center + Math.sin(b) * 34, center + Math.cos(b) * 34);
-      c.closePath();
-      c.fillStyle = side === 1 ? "#40504a" : "#a7855d";
-      c.fill();
-    }
-  }
-  const t = new T.CanvasTexture(canvas);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  return new T.MeshStandardMaterial({ map: t, roughness: 0.9 });
-}
 function tree(parts: Parts, px: number, pz: number, size: number, seed: number, planter: boolean) {
   const { x, y: z } = sheetPoint(px, pz);
-  const base = planter ? 0.13 : -0.27;
+  const base = planter ? 0.13 : -0.055;
   if (planter) {
-    parts.add("pole", "#b39772", new T.Vector3(x, 0.135, z), new T.Vector3(1.9, 0.12, 1.9));
-    parts.add("pole", "#766d4c", new T.Vector3(x, 0.205, z), new T.Vector3(1.65, 0.04, 1.65));
+    parts.add("pole", "#aba699", new T.Vector3(x, 0.13, z), new T.Vector3(1.35, 0.07, 1.35));
+    parts.add("pole", "#5a5549", new T.Vector3(x, 0.17, z), new T.Vector3(1.18, 0.025, 1.18));
   }
   const v = (dx: number, y: number, dz: number) =>
     new T.Vector3(x + dx * size, base + y * size, z + dz * size);
   parts.rod("#706345", v(0, 0, 0), v(0.04, 0.7, 0), 0.047 * size);
-  const palette = ["#637944", "#879151", "#a0a259", "#708849", "#849556"];
+  const palette = ["#56694f", "#788769", "#899473", "#647a59", "#748367"];
   for (let i = 0; i < 6; i++) {
     const a = seed * 0.78 + i * 2.39996,
       r = i === 5 ? 0 : 0.23;
@@ -139,7 +72,7 @@ function vehicle(
     yaw = (heading * Math.PI) / 180,
     unitQ = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), yaw);
   const at = (dx: number, y: number, dz: number) =>
-    new T.Vector3(dx, y, dz).applyQuaternion(unitQ).add(new T.Vector3(x, 0.15, z));
+    new T.Vector3(dx, y, dz).applyQuaternion(unitQ).add(new T.Vector3(x, kind === "cycle" ? 0.11 : 0.032, z));
   function box(c: string, dx: number, y: number, dz: number, w: number, h: number, l: number) {
     const p = at(dx, y, dz);
     parts.box(c, p.x, p.y, p.z, w, h, l, yaw);
@@ -198,7 +131,7 @@ function pedestrian(parts: Parts, px: number, pz: number, angle: number, i: numb
     yaw = (angle * Math.PI) / 180,
     q = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), yaw);
   const v = (dx: number, y: number, dz: number) =>
-    new T.Vector3(dx, y, dz).applyQuaternion(q).add(new T.Vector3(x, 0.12, z));
+    new T.Vector3(dx, y, dz).applyQuaternion(q).add(new T.Vector3(x, 0.11, z));
   const shirt = ["#a25c3f", "#e3d7b8", "#65796d", "#6e8291", "#aa885e", "#7c5660"][i % 6];
   const skin = ["#a97752", "#966c4c", "#ce9e76", "#815a44"][i % 4];
   const leg = i % 3 ? "#4e5048" : "#807b69";
@@ -219,127 +152,104 @@ function pedestrian(parts: Parts, px: number, pz: number, angle: number, i: numb
   }
 }
 
+// The carriageway separates the two paved wings. Both independent paving meshes
+// share its exact Bézier edges, leaving a shallow, continuous stone kerb.
+function carriagewaySides() {
+  const west = new T.Path();
+  west.moveTo(287, 768);
+  west.bezierCurveTo(294, 698, 315, 639, 365, 593);
+  west.bezierCurveTo(416, 541, 481, 518, 552, 523);
+  west.lineTo(629, 538);
+  west.bezierCurveTo(708, 553, 766, 501, 779, 424);
+  west.bezierCurveTo(783, 400, 783, 378, 783, 352);
+  west.lineTo(783, 194);
+  west.lineTo(793, 151);
+  const east = new T.Path();
+  east.moveTo(875, 156);
+  east.lineTo(875, 416);
+  east.bezierCurveTo(875, 536, 788, 626, 668, 629);
+  east.lineTo(548, 629);
+  east.bezierCurveTo(467, 629, 411, 671, 395, 753);
+  east.lineTo(388, 817);
+  return { west: west.getPoints(36), east: east.getPoints(36) };
+}
+
+function insetKerb(points: T.Vector2[]) {
+  const vertices: number[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const ia = sheetPoint(points[i].x, points[i].y);
+    const ib = sheetPoint(points[i + 1].x, points[i + 1].y);
+    const direction = ib.clone().sub(ia).normalize();
+    const offset = new T.Vector2(direction.y, -direction.x).multiplyScalar(0.16);
+    const oa = ia.clone().add(offset), ob = ib.clone().add(offset);
+    for (const point of [ia, ib, oa, oa, ib, ob]) vertices.push(point.x, 0.118, point.y);
+  }
+  const geo = new T.BufferGeometry();
+  geo.setAttribute("position", new T.Float32BufferAttribute(vertices, 3));
+  geo.computeVertexNormals();
+  const kerb = new T.Mesh(geo, new T.MeshStandardMaterial({ color: "#c9c6ba", roughness: 0.9, side: T.DoubleSide }));
+  kerb.receiveShadow = true;
+  return kerb;
+}
+
 export function buildMarket(scene: T.Scene) {
-  // The island and curved carriageway follow the ground drawing; surface materials follow the renders.
-  const plinth = new SiteShape();
-  plinth
-    .move(74, 620)
-    .line(166, 417)
-    .line(193, 354)
-    .line(673, 450)
-    .line(746, 120)
-    .line(966, 132)
-    .line(966, 455)
-    .line(1368, 455)
-    .line(1453, 841)
-    .line(1389, 852)
-    .line(382, 850)
-    .line(246, 784)
-    .closePath();
-  scene.add(surface(plinth, "#bbc09e", 0.85, -1.05));
-  const site = new SiteShape();
-  site
-    .move(101, 615)
-    .line(169, 460)
-    .line(196, 471)
-    .line(216, 379)
-    .line(684, 476)
-    .line(725, 293)
-    .line(764, 302)
-    .line(793, 150)
-    .line(944, 160)
-    .line(944, 478)
-    .line(1346, 479)
-    .line(1420, 824)
-    .line(1389, 828)
-    .line(1388, 821)
-    .line(922, 823)
-    .line(674, 826)
-    .line(388, 818)
-    .line(258, 755)
-    .closePath();
-  scene.add(surface(site, "#e8deca", 0.28, -0.17, paverTexture()));
+  const board = new SiteShape();
+  board.move(84, 128).line(1436, 128).line(1442, 134).line(1442, 844)
+    .line(1436, 850).line(84, 850).line(78, 844).line(78, 134).closePath();
+  const boardOutline = [sheetPoint(78, 128), sheetPoint(1442, 128), sheetPoint(1442, 850), sheetPoint(78, 850)];
+  scene.add(surface(board, "#827768", 0.66, -1.05));
+  scene.add(surface(board, "#474b42", 0.19, -0.39));
+  const turf = surface(board, "#ffffff", 0.145, -0.2, turfTexture());
+  turf.material[1].color.set("#48614d");
+  scene.add(turf);
+
+  const { east, west } = carriagewaySides();
+  const westCourt = new SiteShape();
+  westCourt.move(287, 768).line(258, 755).line(101, 615).line(169, 460)
+    .line(196, 471).line(216, 379).line(684, 476).line(725, 293)
+    .line(764, 302).line(793, 151);
+  west.slice(0, -1).reverse().forEach(p => westCourt.line(p.x, p.y));
+  westCourt.closePath();
+
+  const eastCourt = new SiteShape();
+  eastCourt.move(875, 156).line(944, 160).line(944, 478).line(1346, 479)
+    .line(1420, 824).line(1389, 828).line(1388, 821).line(922, 823)
+    .line(674, 826).line(388, 818).line(388, 817);
+  east.slice(0, -1).reverse().forEach(p => eastCourt.line(p.x, p.y));
+  eastCourt.closePath();
+  const stone = paverTexture();
+  for (const court of [westCourt, eastCourt]) {
+    const paving = surface(court, "#ffffff", 0.165, -0.055, stone);
+    paving.material[1].color.set("#b9b5a8");
+    scene.add(paving);
+  }
   const road = new SiteShape();
-  road
-    .move(287, 768)
-    .curve(294, 698, 315, 639, 365, 593)
-    .curve(416, 541, 481, 518, 552, 523)
-    .line(629, 538)
-    .curve(708, 553, 766, 501, 779, 424)
-    .curve(783, 400, 783, 378, 783, 352)
-    .line(783, 194)
-    .line(793, 151)
-    .line(875, 156)
-    .line(875, 416)
-    .curve(875, 536, 788, 626, 668, 629)
-    .line(548, 629)
-    .curve(467, 629, 411, 671, 395, 753)
-    .line(388, 817)
-    .closePath();
-  scene.add(surface(road, "#565a51", 0.036, 0.114));
+  road.move(268, 850);
+  west.forEach(p => road.line(p.x, p.y));
+  road.line(797, 128).line(875, 128);
+  east.forEach(p => road.line(p.x, p.y));
+  road.line(384, 850).closePath();
+  const asphalt = surface(road, "#ffffff", 0.087, -0.055, asphaltTexture());
+  asphalt.material[1].color.set("#60636a");
+  scene.add(asphalt, insetKerb(west), insetKerb(east));
+
   const detail = new Parts();
   const med = sheetPoint(828, 650);
-  const disc = new T.Mesh(new T.CircleGeometry(5.85, 72), sunburst());
+  const radius = med.distanceTo(sheetPoint(888, 650));
+  const disc = new T.Mesh(new T.CircleGeometry(radius, 120), courtyardRosette());
   disc.rotation.x = -Math.PI / 2;
-  disc.position.set(med.x, 0.125, med.y);
+  disc.position.set(med.x, 0.122, med.y);
+  disc.receiveShadow = true;
   scene.add(disc);
-  // Crossings face along the movement of pedestrians across the internal drive.
-  for (let n = 0; n < 7; n++) {
-    const p = sheetPoint(646, 548 + n * 10.5);
-    detail.box("#d3cec0", p.x, 0.157, p.y, 1.62, 0.012, 0.72);
-  }
-  [
-    [599, 653],
-    [704, 657],
-    [875, 714],
-    [952, 719],
-    [1207, 715],
-    [1177, 595],
-    [915, 584],
-    [845, 528],
-  ].forEach(([x, z], i) => tree(detail, x, z, 3.7 + (i % 3) * 0.43, i, true));
-  const trees = [
-    [92, 601],
-    [141, 505],
-    [203, 400],
-    [244, 376],
-    [324, 390],
-    [401, 403],
-    [478, 422],
-    [557, 435],
-    [638, 449],
-    [716, 343],
-    [753, 204],
-    [913, 145],
-    [947, 238],
-    [944, 340],
-    [958, 466],
-    [1029, 470],
-    [1108, 465],
-    [1190, 462],
-    [1280, 465],
-    [1358, 496],
-    [1386, 607],
-    [1403, 685],
-    [1418, 796],
-    [1260, 833],
-    [1124, 834],
-    [1000, 835],
-    [848, 836],
-    [723, 841],
-    [579, 831],
-    [480, 830],
-    [337, 807],
-    [237, 764],
-    [172, 703],
-  ];
-  trees.forEach(([x, z], i) => tree(detail, x, z, 4.4 + ((i * 7) % 11) * 0.15, i + 17, false));
+
+  [[907, 590], [1164, 701], [274, 512]].forEach(([x, z], i) =>
+    tree(detail, x, z, 3.2 + i * 0.2, i, true));
+  [[200, 342], [635, 396], [1000, 254], [1314, 416], [173, 748]].forEach(([x, z], i) =>
+    tree(detail, x, z, 3.8 + (i % 2) * 0.5, i + 10, false));
   const cars: [number, number, number, string][] = [
     [343, 721, 160, "#ded5c1"],
-    [489, 573, 95, "#9d604a"],
-    [709, 584, 108, "#dedacf"],
+    [489, 573, 95, "#8e6054"],
     [837, 399, 178, "#65736d"],
-    [825, 277, -3, "#ccc0a3"],
   ];
   cars.forEach(([x, z, heading, color]) => vehicle(detail, x, z, heading, color, "car"));
   vehicle(detail, 601, 595, 92, "#935443", "scooter");
@@ -347,34 +257,9 @@ export function buildMarket(scene: T.Scene) {
   vehicle(detail, 881, 673, -30, "#7a644b", "cycle");
   vehicle(detail, 915, 687, -20, "#735244", "cycle");
   const people = [
-    [571, 664],
-    [577, 666],
-    [718, 683],
-    [731, 691],
-    [779, 695],
-    [834, 703],
-    [844, 705],
-    [883, 622],
-    [919, 605],
-    [958, 588],
-    [1008, 589],
-    [1035, 706],
-    [1040, 704],
-    [1155, 695],
-    [1192, 704],
-    [1211, 585],
-    [1230, 602],
-    [688, 556],
-    [681, 551],
-    [603, 534],
-    [446, 501],
-    [459, 504],
-    [408, 727],
-    [465, 736],
-    [795, 450],
-    [867, 417],
-    [201, 581],
-    [319, 661],
+    [571, 652], [577, 654], [718, 683], [731, 691], [844, 705],
+    [883, 622], [919, 605], [1035, 706], [1040, 704], [1171, 699],
+    [1230, 602], [408, 727], [461, 716], [201, 581], [427, 531],
   ];
   people.forEach(([x, z], i) => pedestrian(detail, x, z, (i * 73) % 360, i));
   // Place stepped flights at the clear stair bays marked in the plan.
@@ -401,4 +286,5 @@ export function buildMarket(scene: T.Scene) {
     }
   });
   detail.build(scene);
+  return { boardOutline };
 }

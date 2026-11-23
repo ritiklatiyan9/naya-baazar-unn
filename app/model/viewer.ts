@@ -1,6 +1,6 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { buildStorey, numberAtlas } from "./buildings";
+import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
 import {
   disposeScene,
@@ -14,7 +14,6 @@ import {
 
 type ViewOptions = {
   select: (id: number) => void;
-  hover: (id: number | null, x: number, y: number) => void;
   failed: () => void;
 };
 export type ModelState = {
@@ -39,7 +38,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     powerPreference: "low-power",
   });
   const scene = new T.Scene();
-  const camera = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 600);
+  const camera = new T.PerspectiveCamera(32, 1, 0.35, 1200);
   const controls = new OrbitControls(camera, canvas);
   let frame = 0,
     closed = false;
@@ -64,55 +63,66 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     renderer.shadowMap.type = T.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
-    renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
-    scene.background = new T.Color("#eeece1");
+    renderer.toneMapping = T.NeutralToneMapping;
+    renderer.toneMappingExposure = 1;
+    scene.background = new T.Color("#e0ded8");
     canvas.setAttribute(
       "aria-label",
-      "Naya Baazar three-dimensional site model. Use the shop selector to inspect a numbered shop with the keyboard.",
+      "Interactive architectural scale model of Naya Baazar. Arrow keys rotate, plus and minus zoom, and Home restores the overview.",
     );
     canvas.setAttribute("role", "img");
     canvas.tabIndex = 0;
     host.appendChild(canvas);
-    scene.add(new T.HemisphereLight("#fff5e3", "#a8a38a", 2.15));
-    const sun = new T.DirectionalLight("#ffe5bd", 3.1);
-    sun.position.set(-65, 95, -48);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -95, right: 95, top: 90, bottom: -90, near: 1, far: 290 });
-    sun.shadow.bias = -0.00024;
-    sun.shadow.normalBias = 0.035;
-    scene.add(sun);
+
+    // Broad, neutral studio fill keeps the ivory stock distinct from the recessed glazing.
+    scene.add(new T.HemisphereLight("#edf2f8", "#c3c4c3", 1.76));
+    const key = new T.DirectionalLight("#fffaf5", 2.25);
+    key.position.set(-48, 88, 60);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, { left: -102, right: 102, top: 87, bottom: -87, near: 1, far: 240 });
+    key.shadow.bias = -0.00012;
+    key.shadow.normalBias = 0.026;
+    key.shadow.radius = 2.2;
+    scene.add(key);
+    const fill = new T.DirectionalLight("#e6edf7", 0.68);
+    fill.position.set(47, 38, -65);
+    scene.add(fill);
+
     const backdrop = new T.Mesh(
-      new T.PlaneGeometry(1500, 1500),
-      new T.MeshStandardMaterial({ color: "#e5e1d2", roughness: 1 }),
+      new T.PlaneGeometry(2200, 2200),
+      new T.MeshStandardMaterial({ color: "#c9c8c6", roughness: 1 }),
     );
     backdrop.rotation.x = -Math.PI / 2;
     backdrop.position.y = -1.1;
     backdrop.receiveShadow = true;
     scene.add(backdrop);
-    buildMarket(scene);
-    const atlas = numberAtlas();
-    const ground = buildStorey(groundUnits, "ground", atlas),
-      first = buildStorey(firstUnits, "first", atlas);
+    const { boardOutline } = buildMarket(scene);
+    const ground = buildStorey(groundUnits, "ground"),
+      first = buildStorey(firstUnits, "first");
     scene.add(ground.group, first.group);
+    // The soft contact immediate to a model on a worktop stays fixed as the camera orbits.
+    scene.add(contactShadow([boardOutline], -1.09, 1.15, 0.26));
+    scene.add(contactShadow(groundUnits.map((unit) => unit.outline), 0.113, 0.62, 0.18));
     controls.enableDamping = false;
     controls.enablePan = true;
     controls.screenSpacePanning = false;
-    controls.minZoom = 0.7;
-    controls.maxZoom = 12;
-    controls.minPolarAngle = 0.16;
-    controls.maxPolarAngle = Math.PI * 0.42;
+    controls.minDistance = 9;
+    controls.maxDistance = 600;
+    controls.minPolarAngle = 0.12;
+    controls.maxPolarAngle = Math.PI * 0.45;
     controls.touches.ONE = T.TOUCH.ROTATE;
     controls.touches.TWO = T.TOUCH.DOLLY_PAN;
     controls.zoomSpeed = 0.85;
     const raycaster = new T.Raycaster(),
       cursor = new T.Vector2();
-    const sceneBounds = new T.Box3();
-    const footprint = [...groundUnits, ...firstUnits].flatMap((unit) => unit.outline);
-    footprint.forEach((p) => sceneBounds.expandByPoint(new T.Vector3(p.x, 0, p.y)));
-    const centre = sceneBounds.getCenter(new T.Vector3());
-    centre.y = 2;
+    const framingPoints = boardOutline.map((p) => new T.Vector3(p.x, -1.05, p.y));
+    // Roofs and stair caps sit above the board and determine the top margin at low angles.
+    for (const unit of firstUnits)
+      for (const p of unit.outline) framingPoints.push(new T.Vector3(p.x, 2 * levelHeight + 2.75, p.y));
+    const centre = new T.Box3().setFromPoints(framingPoints).getCenter(new T.Vector3());
+    let fittedDistance = 190;
+    let preset: CameraView | null = "overview";
     let state: ModelState = { floor: "ground", entire: true, selected: null, statuses: {} };
     let lastState: ModelState | undefined;
     let outline: T.Mesh | undefined;
@@ -125,51 +135,75 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         if (!closed) renderer.render(scene, camera);
       });
     }
+    function overview() {
+      // On a phone, look further along the avenue so the long board fills a portrait frame.
+      const wide = T.MathUtils.smoothstep(camera.aspect, 0.8, 1.9);
+      const azimuth = T.MathUtils.lerp(1.41, 2.38, wide);
+      const direction = new T.Vector3(Math.sin(azimuth), 0.87 - 0.15 * wide, Math.cos(azimuth)).normalize();
+      const right = new T.Vector3().crossVectors(camera.up, direction).normalize();
+      const up = new T.Vector3().crossVectors(direction, right);
+      const tanY = Math.tan(T.MathUtils.degToRad(camera.fov / 2));
+      const tanX = tanY * camera.aspect;
+      const points = framingPoints.map((p) => {
+        const rel = p.clone().sub(centre);
+        return { x: rel.dot(right), y: rel.dot(up), z: rel.dot(direction) };
+      });
+      // Solve the minimum perspective distance and target offset for the full board.
+      // Unlike a bounding sphere this also centres the nearer edge of the plinth.
+      const frameScale = 0.90;
+      function span(axis: "x" | "y", tangent: number) {
+        const slope = tangent * frameScale;
+        let lower = -Infinity, upper = Infinity;
+        for (const p of points) {
+          lower = Math.max(lower, p[axis] + p.z * slope);
+          upper = Math.min(upper, p[axis] - p.z * slope);
+        }
+        return { distance: (lower - upper) / (2 * slope), midpoint: (upper + lower) / 2 };
+      }
+      const x = span("x", tanX), y = span("y", tanY);
+      fittedDistance = Math.max(x.distance, y.distance);
+      controls.target.copy(centre).addScaledVector(right, x.midpoint).addScaledVector(up, y.midpoint);
+      camera.position.copy(controls.target).addScaledVector(direction, fittedDistance);
+      // Keep the orbit and zoom pivot inside the model even when the photograph is off-centre.
+      controls.target.addScaledVector(direction, (2.4 - controls.target.y) / direction.y);
+      fittedDistance = camera.position.distanceTo(controls.target);
+      controls.update();
+    }
+    function courtyard() {
+      const point = sheetPoint(731, 596);
+      controls.target.set(point.x, 1.6, point.y);
+      // Look past the floral paving towards the far island with the arcade on either side.
+      const offset = new T.Vector3(46, 24, 12);
+      offset.multiplyScalar(Math.max(1, 1.25 / camera.aspect));
+      camera.position.copy(controls.target).add(offset);
+      controls.update();
+    }
     const resize = () => {
       const { width, height } = host.getBoundingClientRect();
       if (width < 2 || height < 2) return;
-      const aspect = width / height;
-      const direction = new T.Vector3(0.35, 0.95, 1).normalize();
-      const right = new T.Vector3().crossVectors(new T.Vector3(0, 1, 0), direction).normalize();
-      const up = new T.Vector3().crossVectors(direction, right);
-      let horizontal = 0,
-        vertical = 0;
-      for (const p of footprint) {
-        const rel = new T.Vector3(p.x - centre.x, 3, p.y - centre.z);
-        horizontal = Math.max(horizontal, Math.abs(right.dot(rel)));
-        vertical = Math.max(vertical, Math.abs(up.dot(rel)));
-      }
-      const half = Math.max((horizontal + 5) / aspect, vertical + 6) * 1.07;
-      camera.top = half;
-      camera.bottom = -half;
-      camera.right = half * aspect;
-      camera.left = -camera.right;
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
+      if (preset === "overview") overview();
+      else if (preset === "courtyard") courtyard();
       render();
     };
     function setView(view: CameraView) {
-      if (view === "overview") {
-        controls.target.copy(centre);
-        camera.position.copy(centre).add(new T.Vector3(0.35, 0.95, 1).normalize().multiplyScalar(175));
-        camera.zoom = 1;
-      } else {
-        const p = sheetPoint(833, 645);
-        controls.target.set(p.x, 1.3, p.y);
-        camera.position.copy(controls.target).add(new T.Vector3(-29, 25, 37));
-        camera.zoom = Math.max(2.5, Math.min(8, (camera.top - camera.bottom) / 22));
-      }
-      camera.updateProjectionMatrix();
-      controls.update();
+      preset = view;
+      if (view === "overview") overview();
+      else courtyard();
       render();
     }
     function zoom(factor: number) {
-      camera.zoom = T.MathUtils.clamp(camera.zoom * factor, controls.minZoom, controls.maxZoom);
-      camera.updateProjectionMatrix();
+      preset = null;
+      const offset = camera.position.clone().sub(controls.target);
+      offset.setLength(T.MathUtils.clamp(offset.length() / factor, controls.minDistance, controls.maxDistance));
+      camera.position.copy(controls.target).add(offset);
       controls.update();
       render();
     }
     function rotate(step: number) {
+      preset = null;
       const offset = camera.position.clone().sub(controls.target);
       offset.applyAxisAngle(new T.Vector3(0, 1, 0), step);
       camera.position.copy(controls.target).add(offset);
@@ -200,10 +234,11 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         }
         const unit = (next.floor === "ground" ? groundUnits : firstUnits).find((u) => u.id === next.selected);
         if (unit) {
-          const y = (next.floor === "first" ? 2 : 1) * levelHeight + 0.19;
+          const y = (next.floor === "first" ? 2 : 1) * levelHeight + 0.24;
           outline = roofOutline(unit, y, highlightMaterial);
           scene.add(outline);
-          if (next.selected !== lastState?.selected && camera.zoom > 1.5) {
+          if (next.selected !== lastState?.selected && camera.position.distanceTo(controls.target) < fittedDistance / 1.65) {
+            preset = null;
             const offset = camera.position.clone().sub(controls.target);
             controls.target.set(unit.centre.x, y, unit.centre.y);
             camera.position.copy(controls.target).add(offset);
@@ -243,15 +278,12 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         start = { x: e.clientX, y: e.clientY, id: e.pointerId };
         dragged = false;
       }
-      options.hover(null, 0, 0);
     }
     function move(e: PointerEvent) {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) dragged = true;
       if (e.pointerType !== "mouse" || pointers.size) return;
-      const id = pick(e),
-        rect = canvas.getBoundingClientRect();
+      const id = pick(e);
       canvas.style.cursor = id ? "pointer" : "grab";
-      options.hover(id, e.clientX - rect.left, e.clientY - rect.top);
     }
     function up(e: PointerEvent) {
       pointers.delete(e.pointerId);
@@ -270,10 +302,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       pointers.delete(e.pointerId);
       start = null;
       dragged = true;
-      options.hover(null, 0, 0);
-    }
-    function leave() {
-      options.hover(null, 0, 0);
     }
     function keyboard(e: KeyboardEvent) {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -292,7 +320,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", cancel);
-    canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("keydown", keyboard);
     canvas.addEventListener("webglcontextlost", contextLost);
     cleanups.push(() => {
@@ -300,26 +327,61 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointercancel", cancel);
-      canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("keydown", keyboard);
       canvas.removeEventListener("webglcontextlost", contextLost);
     });
-    const onChange = () => {
-      options.hover(null, 0, 0);
-      render();
-    };
-    controls.addEventListener("change", onChange);
+    controls.addEventListener("change", render);
+    controls.addEventListener("start", () => { preset = null; });
     const observer = new ResizeObserver(resize);
     observer.observe(host);
     cleanups.push(() => observer.disconnect());
     resize();
-    setView("overview");
     update(state);
-    return { update, zoom, setView, dispose };
+    function setAvailabilityVisible(show: boolean) {
+      ground.setAvailabilityVisible(show);
+      first.setAvailabilityVisible(show);
+      render();
+    }
+    return { update, zoom, setView, setAvailabilityVisible, dispose };
   } catch (error) {
     dispose();
     throw error;
   }
+}
+
+/** A small baked contact texture adds ambient occlusion without a per-frame postprocess. */
+function contactShadow(outlines: T.Vector2[][], height: number, softness: number, opacity: number) {
+  const bounds = new T.Box2();
+  for (const outline of outlines) for (const p of outline) bounds.expandByPoint(p);
+  bounds.expandByScalar(softness * 3);
+  const size = bounds.getSize(new T.Vector2()), centre = bounds.getCenter(new T.Vector2());
+  const ppm = 1024 / Math.max(size.x, size.y);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(size.x * ppm);
+  canvas.height = Math.ceil(size.y * ppm);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = ctx.shadowColor = "#ffffff";
+  ctx.shadowBlur = softness * ppm;
+  ctx.beginPath();
+  for (const outline of outlines) {
+    outline.forEach((p, i) => {
+      const x = (p.x - bounds.min.x) / size.x * canvas.width;
+      const y = (p.y - bounds.min.y) / size.y * canvas.height;
+      if (!i) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+  }
+  ctx.fill();
+  const map = new T.CanvasTexture(canvas);
+  map.colorSpace = T.SRGBColorSpace;
+  const material = new T.MeshBasicMaterial({
+    color: "#393630", map, transparent: true, opacity, depthWrite: false, toneMapped: false,
+  });
+  const mesh = new T.Mesh(new T.PlaneGeometry(size.x, size.y), material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(centre.x, height, centre.y);
+  return mesh;
 }
 
 function roofOutline(unit: Unit, height: number, mat: T.Material) {

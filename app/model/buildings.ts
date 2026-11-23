@@ -1,226 +1,282 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { Parts, levelHeight, prism, type Booking, type Floor, type Unit } from "./geometry";
+import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type Unit } from "./geometry";
+import { wingBoundaries, type Boundary } from "./wings";
 
-const trim = "#ecdfca";
-const cream = new T.Color("#eee1c9");
-const neutral = new T.Color("#ddd3bf");
-const available = new T.Color("#91b197");
-const booked = new T.Color("#ca7970");
+const shades = {
+  plaster: "#efe8d9",
+  edge: "#f4eee2",
+  lining: "#e2d9c7",
+  coping: "#323b40",
+  fasciaShadow: "#676560",
+  bronze: "#625c50",
+  glassTop: new T.Color("#343c42"),
+  glassBottom: new T.Color("#665f57"),
+};
+const available = new T.Color("#88b697");
+const booked = new T.Color("#ce756d");
+const unreported = new T.Color("#d8d5cb");
 
-export function numberAtlas() {
-  const canvas = document.createElement("canvas");
-  const tile = 64;
-  canvas.width = canvas.height = 16 * tile;
-  const c = canvas.getContext("2d")!;
-  c.textAlign = "center";
-  c.textBaseline = "middle";
-  c.font = "bold 30px Arial, sans-serif";
-  for (let id = 1; id <= 219; id++) {
-    const x = (id % 16) * tile,
-      y = Math.floor(id / 16) * tile;
-    c.fillStyle = "#233b35";
-    c.beginPath();
-    c.roundRect(x + 3, y + 15, 58, 34, 6);
-    c.fill();
-    c.fillStyle = "#fff2ce";
-    c.fillText(String(id), x + 32, y + 33);
+function matte(color: string) {
+  return new T.MeshStandardMaterial({ color, roughness: 0.85, side: T.DoubleSide });
+}
+
+// A seamless, uniformly scaled square roof tile. UVs use architectural metres on every wing.
+function roofFinish() {
+  const size = 128;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const joint = x % 32 === 0 || y % 32 === 0;
+      const bevel = x % 32 === 1 || y % 32 === 1;
+      const grain = ((x * 89 + y * 151 + x * y * 29) % 11) / 3 - 1.8;
+      const tile = (Math.floor(x / 32) * 7 + Math.floor(y / 32) * 11) % 5 - 2;
+      const tone = Math.round(grain + tile + (joint ? -29 : bevel ? 3 : 0));
+      const i = (y * size + x) * 4;
+      data[i] = 230 + tone;
+      data[i + 1] = 224 + tone;
+      data[i + 2] = 211 + tone;
+      data[i + 3] = 255;
+    }
   }
-  const texture = new T.CanvasTexture(canvas);
-  texture.colorSpace = T.SRGBColorSpace;
+  const texture = new T.DataTexture(data, size, size);
+  texture.wrapS = texture.wrapT = T.RepeatWrapping;
+  texture.repeat.set(0.55, 0.55);
+  texture.magFilter = T.LinearFilter;
+  texture.minFilter = T.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
   texture.anisotropy = 4;
-  return texture;
+  texture.colorSpace = T.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return new T.MeshStandardMaterial({ map: texture, roughness: 0.94 });
 }
 
-function entranceDirection(id: number) {
-  if (id <= 6 || (id >= 11 && id <= 34)) return [0, -1];
-  if (id <= 8) return [-0.4, -1];
-  if (id <= 10) return [0.4, -1];
-  if (id <= 37) return id === 37 ? [0, -1] : [0, 1];
-  if (id <= 44) return [0, 1];
-  if (id <= 48) return id === 46 ? [0, -1] : [0, 1];
-  if (id <= 62) return [0, 1];
-  if (id <= 72) return [-1, 0];
-  if (id <= 78) return [1, 0.23];
-  if (id <= 91) return [-0.21, 1];
-  if (id === 92) return [0.8, 0.68];
-  if (id <= 97) return [0.76, 0.65];
-  if (id <= 100) return [0.65, -0.76];
-  if (id <= 103) return [-0.65, 0.76];
-  return [0.65, -0.76];
-}
-
-// Use the outward-facing, unobstructed edge of each measured outline as its shopfront.
-function frontage(unit: Unit, dx: number, dz: number) {
-  const towards = new T.Vector2(dx, dz).normalize();
-  const sign = T.ShapeUtils.area(unit.outline) > 0 ? 1 : -1;
-  let best = -Infinity,
-    result: { mid: T.Vector2; along: T.Vector2; out: T.Vector2; width: number } | undefined;
-  unit.outline.forEach((p, i) => {
-    const q = unit.outline[(i + 1) % unit.outline.length];
-    const along = q.clone().sub(p),
-      width = along.length();
-    if (width < 0.9) return;
-    along.divideScalar(width);
-    const out = new T.Vector2(along.y, -along.x).multiplyScalar(sign);
-    const alignment = out.dot(towards);
-    if (alignment < 0.56) return;
-    const mid = p.clone().lerp(q, 0.5);
-    const score = alignment * 5 + mid.clone().sub(unit.centre).dot(towards) + Math.min(width, 5) * 0.35;
-    if (score > best) {
-      best = score;
-      result = { mid, along, out, width };
-    }
-  });
-  return result;
-}
-
-class Labels {
-  points: number[] = [];
-  uv: number[] = [];
-  add(id: number, a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3) {
-    const x = (id % 16) / 16,
-      y = 1 - Math.floor(id / 16) / 16,
-      s = 1 / 16;
-    [a, b, d, b, c, d].forEach((p) => this.points.push(p.x, p.y, p.z));
-    this.uv.push(x, y - s, x + s, y - s, x, y, x + s, y - s, x + s, y, x, y);
+class Surface {
+  vertices: number[] = [];
+  colors: number[] = [];
+  quad(a: T.Vector3, b: T.Vector3, c: T.Vector3, d: T.Vector3, lower?: T.Color, upper?: T.Color) {
+    const corners = [a, b, c, a, c, d];
+    corners.forEach((p, i) => {
+      this.vertices.push(p.x, p.y, p.z);
+      if (lower && upper) {
+        const tint = i === 2 || i === 4 || i === 5 ? upper : lower;
+        this.colors.push(tint.r, tint.g, tint.b);
+      }
+    });
   }
-  mesh(atlas: T.Texture) {
+  build(parent: T.Group, material: T.MeshStandardMaterial, shadows: boolean) {
+    if (!this.vertices.length) return;
     const geom = new T.BufferGeometry();
-    geom.setAttribute("position", new T.Float32BufferAttribute(this.points, 3));
-    geom.setAttribute("uv", new T.Float32BufferAttribute(this.uv, 2));
-    return new T.Mesh(
-      geom,
-      new T.MeshBasicMaterial({
-        map: atlas,
-        alphaTest: 0.35,
-        side: T.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-      }),
-    );
+    geom.setAttribute("position", new T.Float32BufferAttribute(this.vertices, 3));
+    if (this.colors.length) geom.setAttribute("color", new T.Float32BufferAttribute(this.colors, 3));
+    geom.computeVertexNormals();
+    const mesh = new T.Mesh(geom, material);
+    mesh.castShadow = shadows;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
   }
 }
 
-function facade(
-  parts: Parts,
-  labels: Labels,
-  unit: Unit,
-  id: number,
-  y: number,
-  dx: number,
-  dz: number,
-  upper: boolean,
-) {
-  const edge = frontage(unit, dx, dz);
-  if (!edge) return;
-  const { mid, along, out, width } = edge;
-  const yaw = -Math.atan2(along.y, along.x);
-  const at = (distance: number, height: number, offset: number) =>
-    new T.Vector3(
-      mid.x + along.x * distance + out.x * offset,
-      y + height,
-      mid.y + along.y * distance + out.y * offset,
-    );
-  function panel(
-    c: string,
-    distance: number,
-    height: number,
-    offset: number,
-    w: number,
-    h: number,
-    d: number,
-  ) {
-    const p = at(distance, height, offset);
-    parts.box(c, p.x, p.y, p.z, w, h, d, yaw);
-  }
-  const bay = Math.max(0.8, width - 0.08);
-  panel("#38473e", 0, 1.52, 0.08, bay, 2.83, 0.13);
-  panel(id % 5 === 0 ? "#b49b73" : "#889390", 0, 1.5, 0.158, bay - 0.16, 2.45, 0.04);
-  panel("#313e37", 0, 1.45, 0.22, 0.065, 2.6, 0.085);
-  panel("#cab18b", 0, 2.32, 0.21, bay, 0.065, 0.08);
-  panel("#efe4d0", 0, 3.28, 0.25, bay + 0.3, 0.53, 0.8);
-  panel("#433e34", 0, 2.92, 0.13, bay - 0.05, 0.31, 0.25);
-  panel("#d9bd8b", 0, 2.73, 0.23, Math.max(0.32, bay * 0.72), 0.06, 0.08);
-  panel(trim, 0, 0.075, 0.48, bay + 0.3, 0.15, 1.04);
-  if (upper) {
-    panel("#ded0ba", 0, 0.055, 0.7, bay + 0.35, 0.19, 1.45);
-    panel("#81765f", 0, 0.89, 1.35, bay + 0.24, 0.065, 0.07);
-    panel("#a99b82", 0, 0.48, 1.35, bay + 0.24, 0.038, 0.045);
-    for (const side of [-1, 1]) panel("#796e59", side * bay * 0.45, 0.48, 1.34, 0.055, 0.88, 0.05);
-  }
-  const sign = Math.max(0.64, Math.min(1.2, bay * 0.68));
-  const left = out.x * along.y - out.y * along.x < 0 ? 1 : -1;
-  labels.add(
-    unit.id,
-    at(-left * sign * 0.5, 2.61, 0.291),
-    at(left * sign * 0.5, 2.61, 0.291),
-    at(left * sign * 0.5, 3.24, 0.291),
-    at(-left * sign * 0.5, 3.24, 0.291),
-  );
+function at(p: T.Vector2, h: number) {
+  return new T.Vector3(p.x, h, p.y);
 }
 
-export function buildStorey(units: Unit[], floor: Floor, atlas: T.Texture) {
-  const upper = floor === "first",
-    bottom = upper ? levelHeight + 0.14 : 0.14;
-  const pieces = new Parts(),
-    labels = new Labels(),
-    group = new T.Group();
-  const geometries: T.BufferGeometry[] = [],
-    ids: number[] = [],
-    ranges: { id: number; top: number[] }[] = [];
-  let start = 0;
-  for (const unit of units) {
-    const geom = prism(unit.outline, bottom, levelHeight);
-    const normal = geom.getAttribute("normal"),
-      colors = new Float32Array(normal.count * 3),
-      top: number[] = [];
-    for (let i = 0; i < normal.count; i++) {
-      const isTop = normal.getY(i) > 0.9;
-      (isTop ? neutral : cream).toArray(colors, i * 3);
-      if (isTop) top.push(start + i);
-      ids.push(unit.id);
+function inset(wing: Boundary, index: number, distance: number) {
+  return wing.points[index].clone().addScaledVector(wing.insets[index], distance);
+}
+
+function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number) {
+  const walls = new Surface();
+  const soffits = new Surface();
+  const coping = new Surface();
+  const reveals = new Surface();
+  const windows = new Surface();
+  const details = new Parts();
+  const plaster = matte(shades.plaster);
+  const fascia = matte(shades.edge);
+  const graphite = matte(shades.coping);
+  const tiled = roofFinish();
+  const recess = upper ? 1.23 : 1.63;
+  const low = bottom + 0.14;
+  const high = deck - (upper ? 0.73 : 0.55);
+  const parapet = deck + (upper ? 0.40 : 0.48);
+
+  function plate(contour: T.Vector2[], base: number, depth: number, roof: boolean) {
+    const mesh = new T.Mesh(prism(contour, base, depth), roof ? [tiled, fascia] : plaster);
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
+  for (const wing of wingBoundaries) {
+    const points = wing.points;
+    // Long straight runs need regular facade bays, but only their endpoints belong in a roof triangulation.
+    const roofCorners = points.filter((p, i) => {
+      const a = points[(i + points.length - 1) % points.length];
+      const b = points[(i + 1) % points.length];
+      const cross = (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x);
+      return Math.abs(cross) > 1e-8;
+    });
+    if (!upper) plate(roofCorners, bottom, low - bottom, false);
+    plate(roofCorners, high, deck - high, true);
+
+    let distance = 0;
+    let nextPier = 0;
+    let nextMullion = 0;
+    const inside = points.map((_, i) => inset(wing, i, recess));
+    const count = points.length;
+    for (let i = 0; i < count; i++) {
+      const j = (i + 1) % count;
+      const a = points[i];
+      const b = points[j];
+      const ai = inside[i];
+      const bi = inside[j];
+      const direction = b.clone().sub(a);
+      const length = direction.length();
+      direction.divideScalar(length);
+      const yaw = -Math.atan2(direction.y, direction.x);
+
+      // An actual upstand, narrow metal coping and recessed drip line read at courtyard scale.
+      const p = inset(wing, i, 0.18);
+      const q = inset(wing, j, 0.18);
+      if (upper || wing.publicEdge[i]) {
+        walls.quad(at(a, deck), at(b, deck), at(b, parapet - 0.075), at(a, parapet - 0.075));
+        walls.quad(at(q, deck), at(p, deck), at(p, parapet - 0.075), at(q, parapet - 0.075));
+        coping.quad(at(a, parapet - 0.075), at(b, parapet - 0.075), at(b, parapet), at(a, parapet));
+        coping.quad(at(q, parapet - 0.075), at(p, parapet - 0.075), at(p, parapet), at(q, parapet));
+        coping.quad(at(a, parapet), at(b, parapet), at(q, parapet), at(p, parapet));
+      }
+
+      if (wing.publicEdge[i]) {
+        reveals.quad(at(a, high - 0.07), at(b, high - 0.07), at(b, high), at(a, high));
+        windows.quad(at(ai, low), at(bi, low), at(bi, high), at(ai, high), shades.glassBottom, shades.glassTop);
+        soffits.quad(at(a, high), at(b, high), at(bi, high), at(ai, high));
+        // The tiled balcony below belongs to the lower storey. Provide the same walking surface at street level.
+        if (!upper) soffits.quad(at(ai, low + 0.012), at(bi, low + 0.012), at(b, low + 0.012), at(a, low + 0.012));
+
+        if (!wing.publicEdge[(i + count - 1) % count]) {
+          nextPier = distance + 0.5;
+          nextMullion = distance + 1.55;
+        }
+        const place = (offset: number, setback: number) => {
+          const t = (offset - distance) / length;
+          const out = a.clone().lerp(b, t);
+          return out.addScaledVector(wing.insets[i].clone().lerp(wing.insets[j], t), setback);
+        };
+        while (nextPier <= distance + length) {
+          const anchor = place(nextPier, upper ? recess - 0.23 : 0.64);
+          const width = upper ? 0.22 : 0.40;
+          details.box(shades.plaster, anchor.x, (low + high) / 2, anchor.y, width, high - low, upper ? 0.32 : 0.47, yaw);
+          nextPier += 3.35;
+        }
+        while (nextMullion <= distance + length) {
+          const anchor = place(nextMullion, recess - 0.06);
+          details.box(shades.bronze, anchor.x, (low + high) / 2, anchor.y, 0.065, high - low, 0.08, yaw);
+          nextMullion += 1.675;
+        }
+        const sill = upper ? low + 0.30 : low + 0.17;
+        const sa = inset(wing, i, recess - 0.022);
+        const sb = inset(wing, j, recess - 0.022);
+        reveals.quad(at(sa, low), at(sb, low), at(sb, sill), at(sa, sill));
+      } else {
+        const foot = upper ? bottom : low;
+        walls.quad(at(a, foot), at(b, foot), at(b, high), at(a, high));
+      }
+      if (wing.publicEdge[i] !== wing.publicEdge[j]) {
+        walls.quad(at(b, low), at(bi, low), at(bi, high), at(b, high));
+      }
+      distance += length;
     }
-    geom.setAttribute("color", new T.BufferAttribute(colors, 3));
-    ranges.push({ id: unit.id, top });
-    start += normal.count;
-    geometries.push(geom);
-    const baseId = upper ? unit.id - 111 : unit.id;
-    const [dx, dz] = entranceDirection(baseId);
-    facade(pieces, labels, unit, baseId, bottom, dx, dz, upper);
-    if (baseId >= 38 && baseId <= 44) facade(pieces, labels, unit, baseId, bottom, -dx, -dz, upper);
-    const { x, y: z } = unit.centre;
-    const w = 1.55,
-      h = 1.13,
-      level = bottom + levelHeight + 0.028;
-    labels.add(
-      unit.id,
-      new T.Vector3(x - w / 2, level, z + h / 2),
-      new T.Vector3(x + w / 2, level, z + h / 2),
-      new T.Vector3(x + w / 2, level, z - h / 2),
-      new T.Vector3(x - w / 2, level, z - h / 2),
-    );
   }
-  const geom = mergeGeometries(geometries, false)!;
-  geometries.forEach((g) => g.dispose());
-  const body = new T.Mesh(geom, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
-  body.castShadow = body.receiveShadow = true;
-  group.add(body, labels.mesh(atlas));
-  pieces.build(group);
+  walls.build(group, plaster, true);
+  soffits.build(group, matte(shades.lining), false);
+  coping.build(group, graphite, true);
+  reveals.build(group, matte(shades.fasciaShadow), false);
+  windows.build(group, new T.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.31, metalness: 0.18, side: T.DoubleSide,
+  }), false);
+
+  if (upper) {
+    // Access headhouses sit above the marked stair bays; their low tiled caps share the roof finish.
+    const cores = [
+      [599, 794, 4.15, 3.08, 0],
+      [917, 267, 3.8, 2.9, 0],
+      [1081, 650, 4.35, 3.2, 0],
+      [1374, 702, 3.7, 3.12, 0],
+      [294, 419, 3.05, 2.95, -0.195],
+      [706, 486, 3.05, 2.65, -0.21],
+      [149, 626, 3.45, 2.8, -0.7],
+    ];
+    for (const [x, z, width, depth, yaw] of cores) {
+      const center = sheetPoint(x, z);
+      const cos = Math.cos(yaw);
+      const sin = Math.sin(yaw);
+      const corners = (w: number, d: number) => [
+        [-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2],
+      ].map(([u, v]) => new T.Vector2(center.x + cos * u + sin * v, center.y - sin * u + cos * v));
+      const height = 1.65;
+      details.box(shades.plaster, center.x, deck + height / 2, center.y, width, height, depth, yaw);
+      const doorway = corners(0, depth + 0.045)[2];
+      details.box("#65615b", doorway.x, deck + 0.64, doorway.y, 0.80, 1.28, 0.055, yaw);
+      const lip = new T.Mesh(prism(corners(width + 0.22, depth + 0.22), deck + height - 0.085, 0.115), graphite);
+      lip.castShadow = lip.receiveShadow = true;
+      group.add(lip);
+      plate(corners(width - 0.07, depth - 0.07), deck + height + 0.031, 0.025, true);
+    }
+  }
+  details.build(group);
+}
+
+export function buildStorey(units: Unit[], floor: Floor) {
+  const upper = floor === "first";
+  const bottom = (upper ? levelHeight : 0) + 0.14;
+  const deck = bottom + levelHeight;
+  const group = new T.Group();
+  drawShells(group, upper, bottom, deck);
+
+  // Preserve the actual measured unit polygons as pick targets and optional availability overlays.
+  const volumes: T.BufferGeometry[] = [];
+  const patches: T.BufferGeometry[] = [];
+  const ids: number[] = [];
+  const ranges: { id: number; start: number; count: number }[] = [];
+  let offset = 0;
+  for (const unit of units) {
+    const volume = prism(unit.outline, bottom, levelHeight);
+    for (let i = 0; i < volume.getAttribute("position").count; i++) ids.push(unit.id);
+    volumes.push(volume);
+    const patch = new T.ShapeGeometry(new T.Shape(unit.outline.map(p => new T.Vector2(p.x, -p.y)))).toNonIndexed();
+    patch.rotateX(-Math.PI / 2);
+    patch.translate(0, deck + 0.04, 0);
+    const count = patch.getAttribute("position").count;
+    ranges.push({ id: unit.id, start: offset, count });
+    offset += count;
+    patches.push(patch);
+  }
+
+  const body = new T.Mesh(mergeGeometries(volumes)!, new T.MeshBasicMaterial({ visible: false }));
+  const patchGeometry = mergeGeometries(patches)!;
+  const colors = new T.Float32BufferAttribute(new Float32Array(offset * 3), 3);
+  colors.setUsage(T.DynamicDrawUsage);
+  patchGeometry.setAttribute("color", colors);
+  const overlay = new T.Mesh(patchGeometry, new T.MeshBasicMaterial({
+    vertexColors: true, side: T.DoubleSide, transparent: true, opacity: 0.80,
+    polygonOffset: true, polygonOffsetFactor: -1, depthWrite: false,
+  }));
+  overlay.visible = false;
+  group.add(body, overlay);
+  volumes.forEach(g => g.dispose());
+  patches.forEach(g => g.dispose());
   return {
     group,
     body,
     units,
-    pick(face: T.Face) {
-      return ids[face.a];
-    },
+    pick(face: T.Face) { return ids[face.a]; },
+    setAvailabilityVisible(show: boolean) { overlay.visible = show; },
     color(status: Record<number, Booking>) {
-      const attribute = geom.getAttribute("color");
-      ranges.forEach(({ id, top }) => {
-        const c = status[id] === "booked" ? booked : status[id] === "available" ? available : neutral;
-        top.forEach((i) => attribute.setXYZ(i, c.r, c.g, c.b));
+      ranges.forEach(({ id, start, count }) => {
+        const c = status[id] === "booked" ? booked : status[id] === "available" ? available : unreported;
+        for (let i = start; i < start + count; i++) colors.setXYZ(i, c.r, c.g, c.b);
       });
-      attribute.needsUpdate = true;
+      colors.needsUpdate = true;
     },
   };
 }

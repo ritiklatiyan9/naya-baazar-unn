@@ -7,6 +7,26 @@
   min-width: 0;
   align-self: start;
 }
+.explorer-grid.model-wide { grid-template-columns: minmax(0, 1fr); }
+.model-wide .three-stage { height: clamp(390px, 43vw, 660px); }
+.three-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.three-plan .three-directory,
+.three-plan .three-camera-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+.three-plan .three-directory[aria-expanded="true"] { background: #f1eee6; }
 .three-head,
 .three-bottom {
   display: flex;
@@ -19,8 +39,7 @@
 .three-head {
   border-bottom: 1px solid var(--line, #d7dfd8);
 }
-.three-plan button,
-.three-plan select {
+.three-plan button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -50,7 +69,6 @@
   color: white;
 }
 .three-expand,
-.three-camera button,
 .three-tools button {
   display: inline-flex;
   align-items: center;
@@ -82,7 +100,6 @@
 .three-host canvas:active {
   cursor: grabbing;
 }
-.three-camera,
 .three-tools {
   position: absolute;
   z-index: 1;
@@ -91,25 +108,15 @@
   border-radius: 6px;
   box-shadow: 0 2px 8px #372f1e13;
 }
-.three-camera {
-  top: 13px;
-  left: 13px;
-}
 .three-tools {
   right: 13px;
   bottom: 13px;
   display: flex;
 }
-.three-camera button,
 .three-tools button {
   border: 0;
   background: transparent;
   color: #414a39;
-}
-.three-camera button {
-  padding: 0.48rem 0.65rem;
-  font-size: 0.82rem;
-  font-weight: 550;
 }
 .three-tools button {
   width: 36px;
@@ -117,25 +124,6 @@
 }
 .three-tools button + button {
   border-left: 1px solid #d9d4c3;
-}
-.three-tooltip {
-  pointer-events: none;
-  position: absolute;
-  z-index: 2;
-  transform: translate(-50%, -100%);
-  display: grid;
-  justify-items: center;
-  gap: 1px;
-  background: #293a31ef;
-  color: white;
-  padding: 6px 10px;
-  border-radius: 5px;
-  font-size: 12px;
-  box-shadow: 0 2px 8px #463b2c22;
-}
-.three-tooltip span {
-  text-transform: capitalize;
-  color: #e1e3d8;
 }
 .three-message {
   position: absolute;
@@ -190,14 +178,54 @@
 .three-bottom {
   border-top: 1px solid #d6d4c8;
 }
-.three-picker select {
-  appearance: auto;
-  font-size: 0.85rem;
-  padding: 5px;
-  border: 1px solid #ced2c4;
-  border-radius: 5px;
+.three-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  position: relative;
+  min-height: 2rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+.three-availability input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.three-switch {
+  display: inline-flex;
+  align-items: center;
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+  border: 1px solid #89877f;
+  border-radius: 20px;
+  background: #e9e5de;
+}
+.three-switch::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #676259;
+}
+.three-availability input:checked + .three-switch {
+  background: #494438;
+  border-color: #494438;
+}
+.three-availability input:checked + .three-switch::after {
+  transform: translateX(14px);
   background: white;
-  max-width: 168px;
+}
+.three-availability input:focus-visible + .three-switch {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.three-availability:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
 }
 .three-caption {
   margin: 0;
@@ -218,6 +246,8 @@
   flex: 1;
 }
 @media (max-width: 600px) {
+  .three-head-actions { gap: 0.25rem; }
+  .three-plan .three-directory, .three-plan .three-camera-preset { font-size: 0.8rem; }
   .three-head,
   .three-bottom {
     padding: 0.55rem 0.6rem;

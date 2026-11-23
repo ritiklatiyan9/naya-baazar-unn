@@ -56,7 +56,6 @@ const glyphs: Record<string, ReactNode> = {
   plus: <path d="M12 5v14M5 12h14"/>,
   minus: <path d="M5 12h14"/>,
   fit: <><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></>,
-  ruler: <><path d="m3 15 12-12 6 6L9 21z"/><path d="m8 11 2 2m2-6 2 2m-2 6 2 2"/></>,
 };
 
 function Icon({ name }: { name: keyof typeof glyphs }) {
@@ -90,7 +89,6 @@ function PlanView({ floor, onFloor, statuses, selected, onSelect, expanded, onEx
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<View>(fitView);
-  const [dimensions, setDimensions] = useState(false);
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ pointerId: number; x: number; y: number; view: View; ratio: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
@@ -125,8 +123,7 @@ function PlanView({ floor, onFloor, statuses, selected, onSelect, expanded, onEx
     const width = sheet.width / view.zoom;
     const height = sheet.height / view.zoom;
     svg.setAttribute("viewBox", `${view.x - width / 2} ${view.y - height / 2} ${width} ${height}`);
-    svg.setAttribute("data-show-dimensions", String(dimensions));
-  }, [source, view, dimensions, getSvg]);
+  }, [source, view, getSvg]);
 
   useEffect(() => {
     if (selected === null || !source) return;
@@ -252,13 +249,7 @@ function PlanView({ floor, onFloor, statuses, selected, onSelect, expanded, onEx
         <button type="button" className="pc-fit" title="Fit entire plan" aria-label="Fit entire plan" disabled={!source} onClick={() => setView(fitView)}><Icon name="fit"/></button>
       </div>
     </div>
-    <div className="pc-bottom">
-      <div className="pc-legend" aria-label="Shop availability legend"><span><i className="pc-available"/>Available</span><span><i className="pc-booked"/>Booked</span></div>
-      <button type="button" className="pc-dimensions" aria-pressed={dimensions} disabled={!source} onClick={() => {
-        setDimensions(!dimensions);
-        if (!dimensions && view.zoom < 2.5) zoomBy(2.5 / view.zoom);
-      }}><Icon name="ruler"/><span>Dimensions</span></button>
-    </div>
+    <div className="pc-legend" aria-label="Shop availability legend"><span><i className="pc-available"/>Available</span><span><i className="pc-booked"/>Booked</span></div>
     {expandedShop && <div className="pc-picked" aria-live="polite">
       <strong>Shop {expandedShop.id}</strong><span>{expandedShop.feet} · {expandedShop.metres} m</span>
       <span className="pc-picked-status">{statuses[expandedShop.id] ?? "Availability pending"}</span>

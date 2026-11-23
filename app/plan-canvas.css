@@ -25,7 +25,7 @@
   outline-offset: 2px;
 }
 
-.pc-toolbar, .pc-bottom {
+.pc-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -43,7 +43,7 @@
   background: #f3f5f0;
 }
 
-.pc-floors button, .pc-expand, .pc-dimensions {
+.pc-floors button, .pc-expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -62,13 +62,13 @@
 
 .pc-floors button[aria-pressed="true"] { background: #244d3b; color: white; }
 .pc-floors button:not([aria-pressed="true"]):hover { background: #e6ece3; }
-.pc-card .pc-expand, .pc-card .pc-dimensions {
+.pc-card .pc-expand {
   font-size: .83rem;
   font-weight: 550;
   min-height: 36px;
   padding: .35rem .5rem;
 }
-.pc-card .pc-expand:hover, .pc-card .pc-dimensions:hover, .pc-card .pc-dimensions[aria-pressed="true"] { background: #e8efe5; }
+.pc-card .pc-expand:hover { background: #e8efe5; }
 
 .pc-stage {
   position: relative;
@@ -177,8 +177,15 @@
 }
 .pc-message button { text-decoration: underline; text-underline-offset: 3px; padding: .4rem; }
 
-.pc-bottom { min-height: 48px; padding-block: .32rem; border-top: 1px solid var(--pc-line); }
-.pc-legend { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem 1.05rem; }
+.pc-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .45rem 1.05rem;
+  min-height: 48px;
+  padding: .32rem 1.05rem;
+  border-top: 1px solid var(--pc-line);
+}
 .pc-legend span { display: inline-flex; align-items: center; gap: .45rem; color: var(--pc-muted); font-size: .83rem; }
 .pc-legend i { display: inline-block; width: .62rem; height: .62rem; border-radius: 2px; }
 .pc-available { background: #adcea9; border: 1px solid #50765c; }
@@ -201,7 +208,7 @@
 .pc-dialog .pc-stage { aspect-ratio: auto; height: min(74dvh, 850px); min-height: 175px; }
 
 @media (max-width: 600px) {
-  .pc-toolbar, .pc-bottom { padding-inline: .65rem; }
+  .pc-toolbar, .pc-legend { padding-inline: .65rem; }
   .pc-toolbar { padding-block: .55rem; }
   .pc-card .pc-expand { width: 38px; height: 38px; }
   .pc-expand span { display: none; }
@@ -217,7 +224,7 @@
   .pc-hint { left: 15px; bottom: 18px; font-size: .7rem; }
   .pc-legend { gap: .65rem; }
   .pc-floors button { padding: .56rem .67rem; }
-  .pc-legend span, .pc-card .pc-dimensions { font-size: .8rem; }
+  .pc-legend span { font-size: .8rem; }
   .pc-dialog { width: 98vw; }
   .pc-dialog .pc-stage { height: min(70dvh, 580px); }
 }

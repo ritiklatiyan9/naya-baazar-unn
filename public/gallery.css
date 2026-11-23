@@ -1,0 +1,86 @@
+.nb-media-section {
+  --media-ink: #173b31;
+  --media-muted: #5a6a60;
+  --media-rule: #d2d9d1;
+  color: var(--media-ink);
+  margin-inline: auto;
+  width: min(100%, 82rem);
+  padding: clamp(1.5rem, 4vw, 3.75rem) clamp(1rem, 4vw, 3.6rem) clamp(3rem, 6vw, 6rem);
+  box-sizing: border-box;
+}
+
+.nb-media-section *, .nb-media-lightbox * { box-sizing: border-box; }
+.nb-media-section button, .nb-media-lightbox button { font: inherit; cursor: pointer; }
+.nb-media-section :focus-visible, .nb-media-lightbox :focus-visible { outline: 3px solid #b58a47; outline-offset: 4px; }
+.nb-media-heading { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem 2.5rem; margin: 0 0 2rem; }
+.nb-media-heading .nb-media-eyebrow { margin: 0 0 .65rem; color: var(--media-muted); font: 600 .76rem/1.5 Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.nb-media-heading h1 { color: var(--media-ink); font-family: 'Baskervville', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: clamp(2.75rem, 5.4vw, 5rem); line-height: 1.04; letter-spacing: -.055em; margin: 0; }
+.nb-media-heading > p { color: var(--media-muted); font-size: 1rem; line-height: 1.6; max-width: 25rem; margin: 0; }
+.nb-gallery-filters { display: flex; gap: .5rem; align-items: center; border-top: 1px solid var(--media-rule); padding: 1.15rem 0 1.4rem; }
+.nb-gallery-filters button { border: 1px solid var(--media-rule); border-radius: .38rem; background: transparent; color: var(--media-ink); display: inline-flex; gap: .5rem; align-items: center; padding: .55rem .85rem; font-size: .88rem; line-height: 1.3; min-height: 2.8rem; }
+.nb-gallery-filters button svg { width: 1.05rem; height: 1.05rem; }
+.nb-gallery-filters button span { font-size: .78rem; opacity: .8; }
+.nb-gallery-filters [aria-pressed="true"] { color: white; background: var(--media-ink); border-color: var(--media-ink); }
+.nb-photo-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: clamp(1rem, 2vw, 1.75rem); }
+.nb-photo-card { background: transparent; color: var(--media-ink); border: none; padding: 0; text-align: left; grid-column: span 2; margin: 0; min-width: 0; }
+.nb-photo-card:is(:nth-child(1),:nth-child(2),:nth-last-child(1),:nth-last-child(2)) { grid-column: span 3; }
+.nb-photo-frame { position: relative; display: block; overflow: hidden; border-radius: .38rem; background: #e7e9df; }
+.nb-photo-frame img { display: block; width: 100%; height: auto; aspect-ratio: 1.55; object-fit: cover; transition: transform .45s ease; }
+.nb-photo-card:nth-child(-n + 2) img { aspect-ratio: 1.78; }
+.nb-photo-title { display: block; font: 400 clamp(1.1rem, 1.7vw, 1.5rem)/1.4 'Baskervville', 'Iowan Old Style', Georgia, serif; letter-spacing: -.025em; margin-block: .6rem .25rem; }
+.nb-photo-expand { position: absolute; right: .65rem; bottom: .65rem; background: rgba(19, 43, 36, .86); color: white; border-radius: 50%; display: grid; place-items: center; width: 2.1rem; height: 2.1rem; opacity: 0; transition: opacity .2s; }
+.nb-photo-expand svg { width: .95rem; }
+.nb-photo-card:is(:hover,:focus-visible) .nb-photo-expand { opacity: 1; }
+.nb-photo-card:hover .nb-photo-frame img { transform: scale(1.035); }
+.nb-gallery-film { margin: 0; max-width: 60rem; }
+.nb-gallery-film figcaption, .nb-tour-meta { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; }
+.nb-gallery-film figcaption { padding-top: .8rem; }
+.nb-gallery-film figcaption strong { font: 400 1.6rem/1.35 'Baskervville','Iowan Old Style',Georgia,serif; }
+.nb-gallery-film figcaption span, .nb-tour-meta { color: var(--media-muted); font-size: .89rem; }
+.nb-tour-layout { display: grid; align-items: start; grid-template-columns: minmax(0, 2.15fr) minmax(16rem, 1fr); gap: clamp(1.5rem, 3vw, 3rem); border-top: 1px solid var(--media-rule); padding-top: 1.5rem; }
+.nb-tour-player { width: 100%; aspect-ratio: 16/9; background: #15271e; display: block; border-radius: .38rem; object-fit: cover; }
+.nb-tour-meta { margin-top: .7rem; }
+.nb-tour-chapters h2 { font: 400 1.65rem/1.25 'Baskervville', 'Iowan Old Style', Georgia, serif; letter-spacing: -.03em; margin: 0 0 .65rem; }
+.nb-chapters-list button { display: flex; align-items: center; width: 100%; gap: .75rem; color: var(--media-ink); background: transparent; text-align: left; padding: .7rem .55rem; border: none; border-top: 1px solid var(--media-rule); }
+.nb-chapters-list button[aria-current="true"] { background: #eaf0e8; box-shadow: inset 3px 0 0 var(--media-ink); }
+.nb-chapters-list button:hover { background: #eef1eb; }
+.nb-chapters-list button img { width: clamp(3.2rem, 5vw, 5.3rem); height: auto; aspect-ratio: 1.55; object-fit: cover; border-radius: .2rem; }
+.nb-chapters-list button span { display: grid; gap: .2rem; }
+.nb-chapters-list strong { font-size: .98rem; font-weight: 550; line-height: 1.3; }
+.nb-chapters-list small { font-size: .81rem; color: var(--media-muted); }
+.nb-tour-description { font-size: .9rem; line-height: 1.55; margin: 0; padding: .85rem .55rem; border-top: 1px solid var(--media-rule); color: var(--media-muted); }
+.nb-media-lightbox { color: #f5f5ec; background: #13241f; border: 1px solid #4f6055; border-radius: .55rem; margin: auto; padding: 0; width: min(68rem, calc(100vw - 2rem)); max-width: 100%; max-height: 95dvh; }
+.nb-media-lightbox::backdrop { background: rgba(9,16,13,.87); }
+body:has(.nb-media-lightbox[open]) { overflow: hidden; }
+.nb-lightbox-content { padding: clamp(.7rem, 2vw, 1.3rem); }
+.nb-lightbox-top, .nb-lightbox-controls, .nb-lightbox-paging { display: flex; align-items: center; justify-content: space-between; gap: .65rem; }
+.nb-lightbox-top { font-size: .85rem; line-height: 1.5; margin-bottom: .65rem; }
+.nb-lightbox-divider { margin: 0 .35rem; color: #a7b2a7; }
+.nb-media-lightbox button { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; color: #f5f5ec; background: transparent; border: 1px solid #627168; border-radius: 50%; }
+.nb-media-lightbox button:hover { background: #31443b; }
+.nb-lightbox-frame { display: grid; place-items: center; }
+.nb-lightbox-frame img { display: block; max-width: 100%; max-height: max(20dvh, calc(95dvh - 10.5rem)); object-fit: contain; }
+.nb-lightbox-controls { margin-top: .75rem; }
+.nb-lightbox-controls [aria-live] { display: flex; align-items: baseline; flex-wrap: wrap; gap: .2rem 1rem; }
+.nb-lightbox-controls [data-count] { color: #c2ccc1; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.nb-lightbox-controls strong { font: 400 clamp(1.2rem, 2.4vw, 1.9rem)/1.25 'Baskervville', 'Iowan Old Style', Georgia, serif; }
+
+@media (max-width: 52rem) {
+  .nb-tour-layout { grid-template-columns: 1fr; }
+  .nb-photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nb-photo-card, .nb-photo-card:is(:nth-child(1),:nth-child(2),:nth-last-child(1),:nth-last-child(2)) { grid-column: span 1; }
+}
+
+@media (max-width: 32rem) {
+  .nb-media-heading { margin-bottom: 1.35rem; }
+  .nb-photo-grid { gap: .9rem .65rem; }
+  .nb-photo-title { font-size: 1.04rem; }
+  .nb-gallery-filters { padding-block: .9rem 1.1rem; }
+  .nb-lightbox-controls [aria-live] { display: grid; }
+  .nb-lightbox-paging { gap: .3rem; }
+  .nb-media-lightbox { width: calc(100vw - 1rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-photo-expand, .nb-photo-frame img { transition: none; }
+}

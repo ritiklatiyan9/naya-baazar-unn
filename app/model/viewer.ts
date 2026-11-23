@@ -1,5 +1,6 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { bindSurfaceGestures } from "./gestures";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
 import { westPassageWalkway, wingBoundaries } from "./wings";
@@ -26,7 +27,6 @@ export type ModelState = {
   statuses: Record<number, Booking>;
 };
 export type CameraView = "overview" | "courtyard" | "street" | "gallery";
-export type NavigationMode = "move" | "orbit";
 
 export async function createViewer(host: HTMLDivElement, signal: AbortSignal, options: ViewOptions) {
   const [groundUnits, firstUnits] = await Promise.all([
@@ -74,7 +74,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     scene.background = studioBackground;
     canvas.setAttribute(
       "aria-label",
-      "Interactive Naya Baazar market. Drag to move. Two fingers pan or pinch to zoom. Use WASD to move, Q and E to turn, plus and minus to zoom and Home for the overview.",
+      "Interactive Naya Baazar market. Drag to orbit or look around. Slide two fingers, Shift-drag or right-drag to move. Pinch to zoom. Twist on a touchscreen to turn. Use WASD to move, Q and E to turn, plus and minus to zoom and Home for the overview.",
     );
     canvas.setAttribute("role", "img");
     canvas.tabIndex = 0;
@@ -118,6 +118,11 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     controls.enableDamping = false;
     controls.enablePan = true;
     controls.screenSpacePanning = false;
+    // A cursor drag can switch from orbit to pan while a pinch or Shift is held.
+    // Handle the primary mouse button below; OrbitControls owns touch and the other buttons.
+    controls.mouseButtons.LEFT = null;
+    controls.mouseButtons.RIGHT = T.MOUSE.PAN;
+    controls.touches.ONE = T.TOUCH.ROTATE;
     controls.touches.TWO = T.TOUCH.DOLLY_PAN;
     controls.zoomSpeed = 0.85;
     const raycaster = new T.Raycaster(),
@@ -130,7 +135,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     let fittedDistance = 190;
     let preset: CameraView | null = "overview";
     let location: CameraView = "overview";
-    let mode: NavigationMode = "move";
     const paths: Partial<Record<Floor, ReturnType<typeof walkableFloor>>> = {};
     const previousEye = new T.Vector2();
     let activityEnabled = !matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -239,14 +243,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       controls.update();
     }
     function onFoot() { return location === "street" || location === "gallery"; }
-    function setNavigationMode(next: NavigationMode) {
-      mode = next;
-      controls.mouseButtons.LEFT = mode === "move" ? T.MOUSE.PAN : T.MOUSE.ROTATE;
-      controls.mouseButtons.RIGHT = mode === "move" ? T.MOUSE.ROTATE : T.MOUSE.PAN;
-      controls.touches.ONE = mode === "move" ? T.TOUCH.PAN : T.TOUCH.ROTATE;
-      // When walking a right-drag turns the eye in place, without swinging through the glass.
-      controls.enableRotate = !onFoot();
-    }
     function eyeHeight() {
       return (location === "gallery" ? shopFloorHeight.first : shopFloorHeight.ground) + 1.58;
     }
@@ -283,7 +279,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       controls.minPolarAngle = walking ? 0.80 : 0.12;
       controls.maxPolarAngle = walking ? 2.25 : Math.PI * 0.45;
       controls.panSpeed = walking ? 1.45 : 1;
-      setNavigationMode(mode);
+      // In the arcades the same drag turns the eye in place.
+      controls.enableRotate = !walking;
       if (view === "overview") overview();
       else if (view === "courtyard") courtyard();
       else walkingView(view === "gallery");
@@ -399,43 +396,78 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       if (!hit?.face) return null;
       return (hit.object === ground.body ? ground : first).pick(hit.face);
     }
-    const pointers = new Set<number>();
+    const pointers = new Map<number, T.Vector2>();
     let start: { x: number; y: number; id: number } | null = null,
-      looking: { x: number; y: number; id: number } | null = null,
+      lookPointer: number | null = null,
+      pinchDrag = false,
       dragged = false;
+    function pan(dx: number, dy: number) {
+      moved();
+      controls.pan(dx * controls.panSpeed, dy * controls.panSpeed);
+    }
+    const gestures = bindSurfaceGestures(canvas, {
+      pan,
+      zoom(factor) {
+        start = null;
+        if (pointers.size) pinchDrag = true;
+        zoom(factor);
+      },
+      turn: rotate,
+      pointerDown: () => pointers.size > 0,
+    });
+    cleanups.push(gestures.dispose);
     function down(e: PointerEvent) {
       canvas.focus({ preventScroll: true });
-      pointers.add(e.pointerId);
+      pointers.set(e.pointerId, new T.Vector2(e.clientX, e.clientY));
+      canvas.setPointerCapture(e.pointerId);
       if (pointers.size > 1) {
         dragged = true;
         start = null;
-        looking = null;
+        lookPointer = null;
         return;
       }
-      if (onFoot() && ((mode === "orbit" && e.button === 0) || (mode === "move" && e.button === 2))) {
-        looking = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      }
-      if (e.button === 0) {
+      const modified = e.ctrlKey || e.shiftKey || e.metaKey;
+      pinchDrag = e.pointerType !== "touch" && gestures.pinching();
+      const turns = (e.button === 0 && !modified) || (e.button === 2 && modified);
+      lookPointer = onFoot() && turns ? e.pointerId : null;
+      if (e.button === 0 && !modified) {
         start = { x: e.clientX, y: e.clientY, id: e.pointerId };
         dragged = false;
       }
     }
     function move(e: PointerEvent) {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) dragged = true;
-      if (looking?.id === e.pointerId) {
-        const scale = Math.PI * 0.72 / Math.max(280, canvas.clientHeight);
-        lookAround(-(e.clientX - looking.x) * scale, (e.clientY - looking.y) * scale);
-        looking.x = e.clientX;
-        looking.y = e.clientY;
+      const position = pointers.get(e.pointerId);
+      if (position) {
+        const dx = e.clientX - position.x, dy = e.clientY - position.y;
+        const primaryCursor = e.pointerType !== "touch" && (e.buttons & 1) !== 0;
+        if (primaryCursor && (e.shiftKey || e.ctrlKey || e.metaKey || pinchDrag)) {
+          pan(dx, dy);
+        } else if (onFoot() && (primaryCursor || lookPointer === e.pointerId)) {
+          const scale = Math.PI * 0.72 / Math.max(280, canvas.clientHeight);
+          lookAround(-dx * scale, dy * scale);
+        } else if (primaryCursor) {
+          moved();
+          const scale = 2 * Math.PI / canvas.clientHeight;
+          controls.rotateLeft(dx * scale);
+          controls.rotateUp(dy * scale);
+        }
+        position.set(e.clientX, e.clientY);
         return;
       }
       if (e.pointerType !== "mouse" || pointers.size) return;
       const id = pick(e);
       canvas.style.cursor = id ? "pointer" : "grab";
     }
-    function up(e: PointerEvent) {
+    function release(e: PointerEvent) {
       pointers.delete(e.pointerId);
-      looking = null;
+      pinchDrag = false;
+      // Resume one-finger looking from the surviving finger's latest position.
+      lookPointer = onFoot() && e.pointerType === "touch" && pointers.size === 1
+        ? pointers.keys().next().value ?? null : null;
+    }
+    function up(e: PointerEvent) {
+      release(e);
       if (
         start?.id === e.pointerId &&
         !dragged &&
@@ -448,8 +480,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       dragged = false;
     }
     function cancel(e: PointerEvent) {
-      pointers.delete(e.pointerId);
-      looking = null;
+      release(e);
       start = null;
       dragged = true;
     }
@@ -458,8 +489,8 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       const key = e.key.toLowerCase();
       if (key === "+" || key === "=") zoom(1.3);
       else if (key === "-") zoom(1 / 1.3);
-      else if (key === "q" || key === "e" || (mode === "orbit" && (key === "arrowleft" || key === "arrowright"))) {
-        rotate(key === "q" || key === "arrowleft" ? 0.15 : -0.15);
+      else if (key === "q" || key === "e") {
+        rotate(key === "q" ? 0.15 : -0.15);
       } else if (["w", "a", "s", "d", "arrowup", "arrowleft", "arrowdown", "arrowright"].includes(key)) {
         moved();
         const forward = controls.target.clone().sub(camera.position);
@@ -477,20 +508,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       else return;
       e.preventDefault();
     }
-    let lastPrecisionScroll = -Infinity;
-    function precisionScroll(e: WheelEvent) {
-      // Trackpads report fine pixel deltas and send ctrl+wheel for a physical pinch.
-      // Keep the same pan gesture through the larger deltas of an accelerating scroll.
-      const precision = e.deltaMode === WheelEvent.DOM_DELTA_PIXEL &&
-        (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) < 54 || !Number.isInteger(e.deltaY) ||
-          e.timeStamp - lastPrecisionScroll < 180);
-      if (!precision || e.ctrlKey || e.metaKey) return;
-      lastPrecisionScroll = e.timeStamp;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      moved();
-      controls.pan(-e.deltaX, -e.deltaY);
-    }
     function contextLost(e: Event) {
       e.preventDefault();
       if (!closed) options.failed();
@@ -500,7 +517,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", cancel);
     canvas.addEventListener("keydown", keyboard);
-    canvas.addEventListener("wheel", precisionScroll, { capture: true, passive: false });
     canvas.addEventListener("webglcontextlost", contextLost);
     cleanups.push(() => {
       canvas.removeEventListener("pointerdown", down);
@@ -508,7 +524,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointercancel", cancel);
       canvas.removeEventListener("keydown", keyboard);
-      canvas.removeEventListener("wheel", precisionScroll, true);
       canvas.removeEventListener("webglcontextlost", contextLost);
     });
     let interacting = false;
@@ -530,7 +545,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       first.setAvailabilityVisible(show);
       render();
     }
-    return { update, zoom, setView, setAvailabilityVisible, setNavigationMode, setActivityEnabled, dispose };
+    return { update, zoom, setView, setAvailabilityVisible, setActivityEnabled, dispose };
   } catch (error) {
     dispose();
     throw error;

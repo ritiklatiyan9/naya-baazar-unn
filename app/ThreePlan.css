@@ -53,8 +53,7 @@
   background: #f6f4ef;
   border-bottom: 1px solid #d9d6cb;
 }
-.three-viewpoints,
-.three-nav-mode {
+.three-viewpoints {
   display: flex;
   gap: .15rem;
   align-items: center;
@@ -82,7 +81,6 @@
   box-shadow: 0 1px 2px #352d1f12;
   color: #312d24;
 }
-.three-nav-mode { flex: 0 0 auto; }
 .three-activity { margin-left: auto; }
 .three-floor-control {
   display: flex;

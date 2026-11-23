@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CameraView, ModelState, NavigationMode, createViewer } from "./model/viewer";
+import type { CameraView, ModelState, createViewer } from "./model/viewer";
 import type { Booking, Floor } from "./model/geometry";
 import "./ThreePlan.css";
 
@@ -27,13 +27,11 @@ const viewpoints: { view: CameraView; label: string }[] = [
 function linkedView(): CameraView {
   return viewpoints.find(({view}) => window.location.hash === "#model/" + view)?.view ?? "overview";
 }
-function Glyph({ name }: { name: "minus" | "plus" | "reset" | "move" | "orbit" | "pause" | "play" | "directory" | "expand" }) {
+function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" | "directory" | "expand" }) {
   const paths = {
     minus: "M5 12h14",
     plus: "M5 12h14M12 5v14",
     reset: "M3 10V4m0 6h6M4 9a8.5 8.5 0 1 1 1 8",
-    move: "M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3",
-    orbit: "M3 12c0-3 4-6 9-6s9 3 9 6-4 6-9 6c-2 0-4-.4-6-1.3M3 12v5h5m2-6 2-1 2 1v3l-2 1-2-1z",
     pause: "M8 5v14M16 5v14",
     play: "M7 4l12 8-12 8z",
     directory: "M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1",
@@ -67,20 +65,16 @@ export default function ThreePlan(props: Props) {
   const [canExpand, setCanExpand] = useState(false);
   const [availability, setAvailability] = useState(false);
   const [cameraView, setCameraView] = useState<CameraView | null>("overview");
-  const [navigation, setNavigation] = useState<NavigationMode>("move");
   const [activity, setActivity] = useState(false);
-  const latest = useRef({ onSelect, availability, navigation, activity });
+  const latest = useRef({ onSelect, availability, activity });
   const effectiveEntire = entire && selected === null;
   const state = useRef<ModelState>({ floor, selected, statuses, entire: effectiveEntire });
   useEffect(() => {
-    latest.current = { onSelect, availability, navigation, activity };
-  }, [onSelect, availability, navigation, activity]);
+    latest.current = { onSelect, availability, activity };
+  }, [onSelect, availability, activity]);
   useEffect(() => {
     controller.current?.setAvailabilityVisible(availability);
   }, [availability]);
-  useEffect(() => {
-    controller.current?.setNavigationMode(navigation);
-  }, [navigation]);
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setActivity(!preference.matches);
@@ -127,7 +121,6 @@ export default function ThreePlan(props: Props) {
         controller.current = viewer;
         viewer.update(state.current);
         viewer.setAvailabilityVisible(latest.current.availability);
-        viewer.setNavigationMode(latest.current.navigation);
         viewer.setActivityEnabled(latest.current.activity);
         setPhase("ready");
       })
@@ -150,7 +143,6 @@ export default function ThreePlan(props: Props) {
   }, []);
   function chooseView(view: CameraView) {
     if (view === "gallery" && !effectiveEntire && floor === "ground") onFloor("first");
-    if (view === "street" || view === "gallery") setNavigation("move");
     controller.current?.setView(view);
   }
   const applyLinkedView = useRef(chooseView);
@@ -218,11 +210,6 @@ export default function ThreePlan(props: Props) {
         <div className="three-viewpoints" role="group" aria-label="Camera viewpoints">
           {viewpoints.map(({view, label}) => <button type="button" key={view} aria-pressed={cameraView === view} onClick={() => openView(view)}>{label}</button>)}
         </div>
-        <div className="three-nav-mode" role="group" aria-label="Drag controls">
-          {(["move", "orbit"] as const).map(mode => <button type="button" key={mode} aria-pressed={navigation === mode} onClick={() => setNavigation(mode)}>
-            <Glyph name={mode} />{mode === "move" ? "Move" : "Orbit"}
-          </button>)}
-        </div>
       </div>}
       <div className="three-stage">
         <div className="three-host" ref={host} />
@@ -289,7 +276,7 @@ export default function ThreePlan(props: Props) {
         </button>}
       </div>
       <p className="three-caption">
-        {navigation === "move" ? "Drag to move. Use W, A, S and D to walk." : "Drag to turn the camera."} Drag with two fingers to pan or pinch to zoom. Shop interiors and activity are illustrative.
+        {cameraView === "street" || cameraView === "gallery" ? "Drag to look around. Use W, A, S and D to walk." : "Drag to orbit."} Slide two fingers to move, pinch to zoom, or twist on a touchscreen to turn. With a mouse, Shift-drag or right-drag to move. Shop interiors and activity are illustrative.
       </p>
     </section>
   );

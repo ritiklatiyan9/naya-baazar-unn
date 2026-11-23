@@ -89,10 +89,10 @@ function openPhotograph(container, start, trigger) {
 }
 
 function player() {
-  return `<video class="nb-tour-player" controls playsinline preload="metadata" poster="${renderPath(10)}" aria-label="Naya Baazar architectural render walkthrough">
-    <source src="/media/walkthrough.mp4" type="video/mp4">
+  return `<video class="nb-tour-player" controls playsinline preload="metadata" poster="${renderPath(14)}" aria-label="Naya Baazar architectural render walkthrough">
+    <source src="/media/walkthrough.mp4?v=steady-2" type="video/mp4">
     <track src="/media/chapters.vtt" kind="chapters" srclang="en" label="Walkthrough chapters">
-    <a href="/media/walkthrough.mp4">Open the walkthrough video</a>
+    <a href="/media/walkthrough.mp4?v=steady-2">Open the walkthrough video</a>
   </video>`;
 }
 

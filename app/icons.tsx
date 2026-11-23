@@ -8,6 +8,7 @@ const symbols: Record<string, ReactNode> = {
   search: <><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></>,
   close: <path d="m6 6 12 12M18 6 6 18"/>,
   lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/></>,
+  cube: <><path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5m-9 5v10"/></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
   film: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></>,
   chevron: <path d="m9 5 7 7-7 7"/>,

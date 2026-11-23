@@ -1,25 +1,33 @@
 # Naya Baazar
 
-The landing page opens the interactive shop plan for Naya Baazar in Unn, Shamli. Both vector plans and all 216 shop dimension records come from the supplied four-page drawing. The gallery uses the 16 project renders. The walkthrough is a short film assembled from those renders.
+The project atlas opens on the interactive ground-floor plan for Naya Baazar in Unn, Shamli. It includes both floors, shop dimensions and availability for all 216 shops in the supplied drawing, a 3D layout, 16 architectural renders and a video walkthrough.
 
-## Staff access
+## Manage shop bookings
 
-Use **Staff login** in the footer. Once signed in, select a shop on the plan or search by its original number in **Manage shops**. Choose **Booked** or **Available** and save. The current layout updates immediately. Other open viewers refresh on focus and every 30 seconds. New inventory starts available.
+Choose **Manage shops** in the header and sign in with your staff account. Select a shop by number or from the plan, choose **Booked** (red) or **Available** (green), and save. Changes persist in Neon PostgreSQL. Other open viewers refresh on focus and every 30 seconds.
 
-## Run locally
+## Deploy to Vercel
 
-Use Node 22.13 or later and npm. From this folder run:
+1. Import the project repository into Vercel. Use the folder containing this README and `package.json` as the **Root Directory**. This is `naya-baazar` when importing the containing workspace, or `.` when importing this folder as the repository.
+2. Select the **Next.js** preset and Node.js **24.x**. The included `vercel.json` runs `npm run build:vercel`. Keep the default output directory.
+3. In **Settings → Environment Variables**, set the sensitive server-side variable `DATABASE_URL` to the connection string for the existing Neon database. Use the pooled TLS connection and a credential with access to the `naya_baazar` schema. Set it for **Production** and for each preview environment that should access inventory.
+4. Deploy. Open **Manage shops** on the new domain and sign in using the existing staff account. Each deployment origin has its own sign-in cookie.
+
+Using the same Neon database preserves existing bookings. Configure a different initialized database for preview deployments if they should carry independent booking data. The application runs the database setup only when the bootstrap script is explicitly called.
+
+## Run the Vercel application locally
+
+Use Node.js 24 and npm. From the project folder, run `npm ci`. Set `DATABASE_URL` in your shell environment or in an ignored `.env.local` file. Start the development server with `npm run dev:vercel`. For a production check, run the following commands.
 
 ```sh
-npm ci
-npm run build
-node scripts/preview.mjs
+npm run build:vercel
+npm run start:vercel
 ```
 
-The preview prompts privately for a Neon connection string. It also accepts the `DATABASE_URL` environment variable. Use the local address printed by the server. For development with live reload use `node scripts/preview.mjs dev`.
+The existing Worker deployment uses `npm run build` and `node scripts/preview.mjs`. Its preview accepts the connection string through the environment or a hidden terminal prompt. Use `node scripts/preview.mjs dev` for its development server.
 
-## Database
+## Initialize a new database
 
-`node scripts/bootstrap.mjs` creates the project's PostgreSQL schema and seeds missing shops. Supply `DATABASE_URL`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` through the process environment, or provide a single JSON object with `databaseUrl`, `email`, and `password` at its hidden terminal prompt. The optional `runtimeRolePassword` provisions a restricted PostgreSQL role for the running app. Bootstrap preserves existing booking states and admin passwords.
+The existing project database already contains the staff account and shop inventory. For a fresh Neon database, `node scripts/bootstrap.mjs` creates the project schema and seeds missing shops. Pass `DATABASE_URL`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` through the environment or enter a JSON object with `databaseUrl`, `email`, and `password` at the hidden terminal prompt. The optional `runtimeRolePassword` field provisions a restricted application role. Bootstrap preserves existing booking states and admin passwords.
 
-The server reads its database connection from `DATABASE_URL`. Store the production value as a runtime secret. Passwords in PostgreSQL use salted PBKDF2. Staff sessions use expiring HTTP-only cookies, and each availability write checks the shop's current version.
+Staff passwords use salted PBKDF2. Sessions use expiring HTTP-only cookies, and each booking change checks the shop version to protect concurrent edits.

@@ -142,14 +142,14 @@ async function currentUser(query, key) {
   return user ?? null;
 }
 
-async function login(request, url, query) {
+async function login(request, url, query, clientIp) {
   const body = await readBody(request);
   if (typeof body.email !== "string" || body.email.length > 254 ||
       typeof body.password !== "string" || body.password.length > 512 || !body.password.length) {
     throw new HttpError(400, "Enter your email address and password.");
   }
   const email = body.email.trim().toLowerCase();
-  const client = await digest(request.headers.get("CF-Connecting-IP") || "local");
+  const client = await digest(clientIp);
   const granted = await query(`
     INSERT INTO naya_baazar.login_limits AS limits (client_key, started_at, attempts)
     VALUES ($1, now(), 1)
@@ -199,8 +199,10 @@ async function updateShop(request, query, key, id) {
   return json({ error: "This shop changed since you opened it. Review its current status.", shop: shopRow(current) }, 409);
 }
 
-export async function handleApi(request, env) {
-  const url = new URL(request.url);
+export async function handleApi(request, env, {
+  url = new URL(request.url),
+  clientIp = request.headers.get("CF-Connecting-IP") || "local",
+} = {}) {
   const path = url.pathname;
   const shop = /^\/api\/shops\/([1-9][0-9]{0,4})$/.exec(path);
   const allowed = { "/api/shops": "GET", "/api/session": "GET", "/api/login": "POST", "/api/logout": "POST" }[path]
@@ -222,7 +224,7 @@ export async function handleApi(request, env) {
       const rows = await query("SELECT id, status, version FROM naya_baazar.shops ORDER BY id");
       return json({ shops: rows.map(shopRow) });
     }
-    if (path === "/api/login") return await login(request, url, query);
+    if (path === "/api/login") return await login(request, url, query, clientIp);
     const key = await sessionKey(request, url);
     if (path === "/api/session") return json({ user: await currentUser(query, key) });
     if (path === "/api/logout") {

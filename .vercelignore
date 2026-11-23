@@ -1,0 +1,11 @@
+.env*
+.dev.vars*
+*.pem
+.sites-runtime/
+.wrangler/
+.vinext/
+.next/
+dist/
+node_modules/
+outputs/
+work/

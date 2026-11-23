@@ -1,0 +1,238 @@
+.three-plan {
+  overflow: hidden;
+  border: 1px solid var(--line, #d7dfd8);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink, #2b3b32);
+  min-width: 0;
+  align-self: start;
+}
+.three-head,
+.three-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.72rem 1rem;
+  flex-wrap: wrap;
+}
+.three-head {
+  border-bottom: 1px solid var(--line, #d7dfd8);
+}
+.three-plan button,
+.three-plan select {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.three-floor-control {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #d9ddd3;
+  border-radius: 7px;
+  background: #f1f2ea;
+}
+.three-floor-control button,
+.three-expand {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+.three-floor-control button {
+  padding: 0.5rem 0.78rem;
+  line-height: 1.2;
+}
+.three-floor-control button[aria-pressed="true"] {
+  background: var(--forest, #284b38);
+  color: white;
+}
+.three-expand,
+.three-camera button,
+.three-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+.three-expand {
+  min-height: 36px;
+}
+.three-stage {
+  height: clamp(350px, 35vw, 540px);
+  position: relative;
+  isolation: isolate;
+  background: #eae5d8;
+  overflow: hidden;
+}
+.three-host,
+.three-host canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.three-host canvas {
+  touch-action: none;
+  cursor: grab;
+}
+.three-host canvas:active {
+  cursor: grabbing;
+}
+.three-camera,
+.three-tools {
+  position: absolute;
+  z-index: 1;
+  background: #fffcf3ee;
+  border: 1px solid #bfbca8;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px #372f1e13;
+}
+.three-camera {
+  top: 13px;
+  left: 13px;
+}
+.three-tools {
+  right: 13px;
+  bottom: 13px;
+  display: flex;
+}
+.three-camera button,
+.three-tools button {
+  border: 0;
+  background: transparent;
+  color: #414a39;
+}
+.three-camera button {
+  padding: 0.48rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 550;
+}
+.three-tools button {
+  width: 36px;
+  height: 36px;
+}
+.three-tools button + button {
+  border-left: 1px solid #d9d4c3;
+}
+.three-tooltip {
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -100%);
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  background: #293a31ef;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px #463b2c22;
+}
+.three-tooltip span {
+  text-transform: capitalize;
+  color: #e1e3d8;
+}
+.three-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+  padding: 22px;
+  background: #eeeade;
+  font-size: 0.93rem;
+}
+.three-message strong {
+  font: 500 1.7rem var(--serif, Georgia, serif);
+}
+.three-message button,
+.three-message a {
+  border: 1px solid #999d87;
+  background: #faf8eb;
+  border-radius: 5px;
+  padding: 7px 11px;
+  margin: 3px;
+  text-decoration: none;
+  color: inherit;
+  font-size: inherit;
+}
+.three-legend,
+.three-legend span {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+.three-legend {
+  gap: 1rem;
+  font-size: 0.85rem;
+  font-weight: 550;
+}
+.three-legend i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #8bac93;
+  border: 1px solid #628569;
+}
+.three-legend span + span i {
+  background: #c87870;
+  border-color: #a95950;
+}
+.three-bottom {
+  border-top: 1px solid #d6d4c8;
+}
+.three-picker select {
+  appearance: auto;
+  font-size: 0.85rem;
+  padding: 5px;
+  border: 1px solid #ced2c4;
+  border-radius: 5px;
+  background: white;
+  max-width: 168px;
+}
+.three-caption {
+  margin: 0;
+  padding: 0 1rem 0.72rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #5b655b;
+}
+.three-plan:fullscreen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+}
+.three-plan:fullscreen .three-stage {
+  flex: 1;
+}
+@media (max-width: 600px) {
+  .three-head,
+  .three-bottom {
+    padding: 0.55rem 0.6rem;
+  }
+  .three-floor-control button {
+    padding: 0.46rem 0.43rem;
+    font-size: 0.79rem;
+  }
+  .three-expand span {
+    display: none;
+  }
+  .three-stage {
+    height: 345px;
+  }
+  .three-caption {
+    padding: 0 0.6rem 0.6rem;
+  }
+}

@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import plan from "../src/plan-data.json";
 import PlanCanvas from "./PlanCanvas";
 import { Icon } from "./icons";
+import ShopManager, { type BookingStatus as Status, type ShopRecord as Availability } from "./ShopManager";
+
+const ThreePlan = lazy(() => import("./ThreePlan"));
 
 type Floor = "ground" | "first";
-type Status = "available" | "booked";
-type Availability = { id: number; status: Status; version: number };
 type Inventory = Record<number, Availability>;
 type Unit = typeof plan[number];
 type User = { email: string };
-type View = "layout" | "details" | "walkthrough" | "gallery";
+type View = "layout" | "model" | "details" | "walkthrough" | "gallery";
 const pages: { id: View; label: string }[] = [
   {id:"layout", label:"Floor plans"}, {id:"details", label:"Project details"},
   {id:"walkthrough", label:"Walkthrough"}, {id:"gallery", label:"Photos & videos"}
@@ -22,7 +23,7 @@ const unitName = (id: number) => "Shop " + String(id).padStart(2, "0");
 const numberText = (feet: string) => feet.replaceAll("'", "′").replaceAll('"', "″");
 const statusLabel = (s?: Status) => s === "available" ? "Available" : s === "booked" ? "Booked" : "Unconfirmed";
 const projectViews = [
-  {id:"10", label:"Aerial perspective"}, {id:"08", label:"Market street"}, {id:"12", label:"Central plaza"}
+  {id:"08", label:"Market street"}, {id:"10", label:"Aerial perspective"}, {id:"12", label:"Central plaza"}
 ];
 
 function Brand() {
@@ -60,31 +61,47 @@ function useData() {
       return next;
     });
   }, []);
+  const lastRefresh = useRef(0);
   const refresh = useCallback(async () => {
+    const sequence = ++lastRefresh.current;
     try {
       const response = await fetch("/api/shops", {cache:"no-store"});
       if (!response.ok) throw new Error();
       const data = await response.json() as {shops:Availability[]};
       if (!Array.isArray(data.shops) || data.shops.length !== plan.length) throw new Error();
       merge(data.shops);
-      setNetwork("live");
-    } catch { setNetwork("error"); }
+      if (sequence === lastRefresh.current) setNetwork("live");
+    } catch { if (sequence === lastRefresh.current) setNetwork("error"); }
   }, [merge]);
+  const [sessionReady, setSessionReady] = useState(false);
   const sessionVersion = useRef(0);
   const changeUser = useCallback((value: User|null) => { sessionVersion.current++; setUser(value); }, []);
   useEffect(() => {
-    const version = sessionVersion.current;
-    fetch("/api/session", {cache:"no-store"}).then(r => r.ok ? r.json() as Promise<{user:User|null}> : null).then(data => {
-      if(data && sessionVersion.current === version) setUser(data.user);
-    }).catch(() => {});
+    let active = true;
+    let latestCheck = 0;
+    async function checkSession() {
+      const version = sessionVersion.current;
+      const sequence = ++latestCheck;
+      try {
+        const response = await fetch("/api/session", {cache:"no-store"});
+        if (!response.ok) return;
+        const data = await response.json() as {user:User|null};
+        if (active && sequence === latestCheck && sessionVersion.current === version) setUser(data.user);
+      } catch {
+        // Keep the current session during a transient network failure.
+      } finally {
+        if (active) setSessionReady(true);
+      }
+    }
+    void checkSession();
     void refresh();
-    const onFocus = () => { if (!document.hidden) void refresh(); };
-    const timer = window.setInterval(onFocus,30000);
+    const onFocus = () => { if (!document.hidden) { void refresh(); void checkSession(); } };
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 30000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
   }, [refresh]);
-  return {inventory,network,merge,refresh,user,changeUser};
+  return {inventory,network,merge,refresh,user,changeUser,sessionReady};
 }
 
 function Login({onClose,onUser}:{onClose:()=>void;onUser:(user:User)=>void}) {
@@ -116,22 +133,7 @@ function Login({onClose,onUser}:{onClose:()=>void;onUser:(user:User)=>void}) {
   </dialog>;
 }
 
-function ShopDetails({unit,record,admin,online,onBack,onSave}:{unit:Unit;record?:Availability;admin:boolean;online:boolean;onBack:()=>void;onSave:(status:Status,version:number)=>Promise<string>}) {
-  const [choice,setChoice] = useState<Status|undefined>(record?.status);
-  const [version,setVersion] = useState(record?.version);
-  const [message,setMessage] = useState("");
-  const [saving,setSaving] = useState(false);
-  const dirty = choice !== record?.status;
-  useEffect(() => {
-    if (version === undefined || !dirty) {setChoice(record?.status);setVersion(record?.version);}
-  }, [record?.version,record?.status,version,dirty]);
-  async function save(){
-    if(!choice || version === undefined || saving) return;
-    setSaving(true); setMessage("");
-    try {const result = await onSave(choice,version); setMessage(result);setVersion(undefined);}
-    catch(e){setMessage(e instanceof Error ? e.message : "Could not save. Try again.");}
-    finally{setSaving(false);}
-  }
+function ShopDetails({unit,record,admin,onBack,onManage}:{unit:Unit;record?:Availability;admin:boolean;onBack:()=>void;onManage:()=>void}) {
   return <div className="shop-details">
     <button className="back-link" onClick={onBack}><Icon name="back" size={14}/> Shop directory</button>
     <div className="shop-title"><h3>{unitName(unit.id)}</h3><span className={"status-pill "+(record?.status || "unknown")}><i/>{statusLabel(record?.status)}</span></div>
@@ -139,21 +141,17 @@ function ShopDetails({unit,record,admin,online,onBack,onSave}:{unit:Unit;record?
     <div className="measure-heading"><Icon name="ruler" size={16}/> Internal dimensions</div>
     <dl className="measurements"><div><dt>Feet & inches</dt><dd>{numberText(unit.feet)}</dd></div><div><dt>Metres</dt><dd>{unit.metres} m</dd></div></dl>
     <p className="dimension-note">{unit.irregular ? "Irregular outline. Spans enclose the shop and include recesses." : "Approximate internal spans, short side first."}</p>
-    {admin && <form className="editor" onSubmit={e=>{e.preventDefault();void save();}}>
-      <fieldset disabled={saving || !online || !record}><legend>Booking status</legend><div className="status-choices">{(["available","booked"] as const).map(s=><label key={s}><input type="radio" name="booking-status" checked={choice===s} onChange={()=>{if(!dirty)setVersion(record?.version);setChoice(s);setMessage("");}}/>{statusLabel(s)}</label>)}</div></fieldset>
-      <button className="primary-button" disabled={saving || !online || !record || !dirty}>{saving?"Saving…":"Save status"}</button>
-      {message && <p className="save-message" role="status">{message}</p>}
-    </form>}
+    {admin && <button type="button" className="primary-button inline-manage" onClick={onManage}><Icon name="shops" size={16}/>Update booking status</button>}
   </div>;
 }
 
-function Directory({floor,inventory,selected,user,online,onSelect,onBack,onSave}:{floor:Floor;inventory:Inventory;selected:number|null;user:User|null;online:boolean;onSelect:(id:number)=>void;onBack:()=>void;onSave:(status:Status,version:number)=>Promise<string>}) {
+function Directory({floor,inventory,selected,user,onSelect,onBack,onManage}:{floor:Floor;inventory:Inventory;selected:number|null;user:User|null;onSelect:(id:number)=>void;onBack:()=>void;onManage:()=>void}) {
   const [query,setQuery] = useState("");
   const filtered = plan.filter(u => query.trim() ? String(u.id).includes(query.trim().replace(/^0+(?=\d)/,"")) : u.floor===floor);
   const unit = plan.find(u=>u.id===selected);
   return <aside className={"directory card" + (user?" staff":"")} aria-label={user?"Shop management":"Shop directory"}>
     <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><p className="eyebrow">{user?"STAFF WORKSPACE":"SHOP INVENTORY"}</p><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>
-    {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} online={online} onBack={onBack} onSave={onSave}/> : <>
+    {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} onBack={onBack} onManage={onManage}/> : <>
       <label className="directory-search"><Icon name="search"/><input aria-label="Find shop by number" placeholder="Find shop by number" value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"/>{query && <button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><Icon name="close" size={15}/></button>}</label>
       <div className="directory-meta"><span>{query.trim()?"Search results":floorName(floor)}</span><span>{filtered.length} {filtered.length===1?"shop":"shops"}</span></div>
       <ul className="unit-list">{filtered.map(u=><li key={u.id}><button onClick={()=>onSelect(u.id)}><span className={"unit-icon "+(inventory[u.id]?.status || "unknown")}><Icon name="shops" size={17}/></span><span className="unit-info"><strong>{unitName(u.id)}</strong><small>{query.trim()?floorName(u.floor)+" · ":""}{numberText(u.feet)}</small></span><span className={"unit-status "+(inventory[u.id]?.status || "unknown")} title={statusLabel(inventory[u.id]?.status)}><i/><span className="sr">{statusLabel(inventory[u.id]?.status)}</span></span><Icon name="chevron" size={13}/></button></li>)}</ul>
@@ -168,7 +166,7 @@ function ProjectDetails() {
     <article><p className="eyebrow">UNN, SHAMLI</p><h3>An open-air market around a courtyard.</h3><p>Naya Baazar brings two floors of shops together around a landscaped plaza. Covered walkways connect the shopfronts, with an internal driveway running through the market.</p>
     <dl className="project-facts"><div><dt>Developer</dt><dd>Defence Garden</dd></div><div><dt>Location</dt><dd>Unn, Shamli, Uttar Pradesh</dd></div><div><dt>Ground floor</dt><dd>108 shops · Nos. 1–108</dd></div><div><dt>First floor</dt><dd>108 shops · Nos. 112–219</dd></div></dl>
     <a href="https://defencegarden.com/" target="_blank" rel="noreferrer" className="text-link">Visit Defence Garden</a></article></div>
-    <div className="drawing-note"><Icon name="info" size={20}/><div><h3>Reading the drawings</h3><p>Shop sizes show approximate internal enclosing spans, short side first. The dimension register flags irregular shapes. The source drawing also flags a boundary labelled 36.00 m that measures about 36.73 m at its stated scale.</p><a className="text-link" href="/plans/naya-baazar-sizes.pdf" download>Download the original drawings and register</a></div></div>
+    <div className="drawing-note"><Icon name="info" size={20}/><div><h3>Reading the drawings</h3><p>Shop sizes show approximate internal enclosing spans, short side first. The dimension register flags irregular shapes. The 3D model follows the drawn shop footprints and uses illustrative heights, finishes and landscaping. The source drawing also flags a boundary labelled 36.00 m that measures about 36.73 m at its stated scale.</p><a className="text-link" href="/plans/naya-baazar-sizes.pdf" download>Download the original drawings and register</a></div></div>
   </section>;
 }
 
@@ -179,9 +177,8 @@ function MediaView({view}:{view:"gallery"|"walkthrough"}) {
   useEffect(()=>{
     let active=true;
     const container=ref.current;
-    const modulePath="/gallery.js";
     setFailed(false);
-    import(/* @vite-ignore */ modulePath).then(mod=>{
+    import("../src/gallery.js").then(mod=>{
       if(active && container) (view==="gallery"?mod.mountGallery:mod.mountWalkthrough)(container);
     }).catch(()=>{if(active)setFailed(true);});
     return ()=>{active=false;container?.replaceChildren();};
@@ -191,21 +188,30 @@ function MediaView({view}:{view:"gallery"|"walkthrough"}) {
 
 function getView(): View {
   const hash = window.location.hash.slice(1);
-  return pages.find(p=>p.id===hash)?.id || "layout";
+  return hash === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "layout";
 }
 
 export default function ProjectAtlas() {
   const [view,setView] = useState<View>("layout");
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
-  const [login,setLogin] = useState(false);
+  const [managerOpen,setManagerOpen] = useState(false);
   const [menu,setMenu] = useState(false);
   const [notice,setNotice] = useState("");
-  const {inventory,network,merge,refresh,user,changeUser} = useData();
+  const {inventory,network,merge,refresh,user,changeUser,sessionReady} = useData();
+  const inLayout = view === "layout" || view === "model";
   const directoryRef = useRef<HTMLDivElement>(null);
   const statuses = useMemo(()=>Object.fromEntries(Object.values(inventory).map(r=>[r.id,r.status])) as Record<number,Status>,[inventory]);
   useEffect(()=>{
-    function route(){setView(getView());setMenu(false);window.scrollTo(0,0);}
+    let previous: View | null = null;
+    function route() {
+      const next = getView();
+      const switchingLayout = (next === "layout" || next === "model") && (previous === "layout" || previous === "model");
+      previous = next;
+      setView(next);
+      setMenu(false);
+      if (!switchingLayout) window.scrollTo(0,0);
+    }
     route();window.addEventListener("hashchange",route);return ()=>window.removeEventListener("hashchange",route);
   },[]);
   function changeFloor(next:Floor){if(next!==floor){setFloor(next);setSelected(null);}}
@@ -214,35 +220,62 @@ export default function ProjectAtlas() {
     if(unit){setFloor(unit.floor as Floor);setSelected(id);}
     if(window.matchMedia("(max-width: 800px)").matches && !document.querySelector("dialog[open]")) directoryRef.current?.scrollIntoView({block:"start"});
   }
-  async function save(status:Status,version:number) {
-    const id=selected;
+  async function save(id:number,status:Status,version:number) {
     const response=await fetch("/api/shops/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,version})});
     const data=await response.json() as {shop:Availability;error?:string};
     if(response.status===401){changeUser(null);setNotice("Your session expired. Sign in again to change shop availability.");throw new Error("Please sign in again.");}
-    if(response.status===409 && data.shop){merge([data.shop]);return "This shop was changed in another session. Review its current status and try again.";}
+    if(response.status===409 && data.shop){merge([data.shop]);return {shop:data.shop,conflict:true};}
     if(!response.ok)throw new Error(data.error || "Could not save the booking status.");
-    merge([data.shop]);return unitName(id!) + " saved as " + status + ".";
+    merge([data.shop]);return {shop:data.shop,conflict:false};
+  }
+  function openManagement() {
+    setMenu(false);
+    setManagerOpen(true);
+  }
+  function locateShop(id: number) {
+    setManagerOpen(false);
+    select(id);
+    if (!inLayout) window.location.hash = "layout";
+    window.requestAnimationFrame(() => document.querySelector(".explorer-grid")?.scrollIntoView({block:"start"}));
   }
   async function logout(){
-    try{const response=await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!response.ok)throw new Error();changeUser(null);setNotice("Signed out.");}
+    try{const response=await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!response.ok)throw new Error();changeUser(null);setManagerOpen(false);setNotice("Signed out.");}
     catch{setNotice("Sign-out could not be confirmed. Please try again.");}
   }
   return <>
     <a className="skip" href="#main-content" onClick={e=>{e.preventDefault();document.getElementById("main-content")?.focus();}}>Skip to content</a>
     <header className="site-header"><div className="header-inner"><Brand/>
-      <nav className={menu?"main-nav open":"main-nav"} aria-label="Project navigation">{pages.map(p=><a key={p.id} href={"#"+p.id} aria-current={view===p.id?"page":undefined} onClick={()=>setMenu(false)}>{p.label}</a>)}</nav>
-      <a className="enquiry" href="tel:+919917665577">Shop enquiries</a>
+      <nav className={menu?"main-nav open":"main-nav"} aria-label="Project navigation">{pages.map(p=><a key={p.id} href={"#"+p.id} aria-current={view===p.id || (inLayout && p.id==="layout")?"page":undefined} onClick={()=>setMenu(false)}>{p.label}</a>)}</nav>
+      <div className="header-actions"><a className="enquiry" href="tel:+919917665577">Shop enquiries</a>
+        <button type="button" className="header-manage" onClick={openManagement} aria-haspopup="dialog"><Icon name={user?"shops":"lock"} size={16}/>Manage shops</button>
+      </div>
       <button className="menu-toggle icon-button" onClick={()=>setMenu(!menu)} aria-expanded={menu} aria-label={menu?"Close navigation":"Open navigation"}><Icon name={menu?"close":"menu"}/></button></div></header>
     <main id="main-content" tabIndex={-1} className="page-wrap"><Hero/>
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
-      {view==="layout" && <section className="layout-view"><div className="section-heading"><div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>Floor plan explorer</h2><p className="intro">Select a shop to explore its dimensions and availability.</p></div><a className="outline-button download" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/>Download plan</a></div>
+      {inLayout && <section className="layout-view"><div className="section-heading explorer-heading">
+        <div><p className="eyebrow section-kicker"><span/>INTERACTIVE LAYOUT</p><h2>Floor plan explorer</h2><p className="intro">Select a shop to explore its dimensions and availability.</p></div>
+        <div className="explorer-actions"><nav className="mode-switch" aria-label="Layout view">
+          <a href="#layout" aria-current={view==="layout"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
+          <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>
+        </nav><a className="outline-button download" href="/plans/naya-baazar-sizes.pdf" download><Icon name="down" size={16}/>Download plan</a></div>
+      </div>
         {network==="error" && <div className="offline" role="status"><Icon name="info"/><span>{Object.keys(inventory).length?"Availability could not refresh. Showing the last received update.":"Shop availability is temporarily unavailable. You can still explore the plans and dimensions."}</span><button onClick={()=>void refresh()}>Retry</button></div>}
-        <div className="explorer-grid"><PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/><div className="directory-wrap" ref={directoryRef}><Directory floor={floor} inventory={inventory} selected={selected} user={user} online={network==="live"} onSelect={select} onBack={()=>setSelected(null)} onSave={save}/></div></div>
+        <div className="explorer-grid">
+          {view === "model"
+            ? <Suspense fallback={<div className="model-loading" role="status">Loading 3D model…</div>}>
+                <ThreePlan onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
+              </Suspense>
+            : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
+          <div className="directory-wrap" ref={directoryRef}><Directory floor={floor} inventory={inventory} selected={selected} user={user} onSelect={select} onBack={()=>setSelected(null)} onManage={openManagement}/></div>
+        </div>
       </section>}
       {view==="details" && <ProjectDetails/>}
       {(view==="gallery" || view==="walkthrough") && <MediaView view={view}/>}
     </main>
-    <footer className="site-footer"><div><img src="/favicon.svg" alt="" width="24" height="24"/><span>Naya Baazar <b>·</b> Defence Garden</span></div><button className="staff-login" onClick={()=>user?void logout():setLogin(true)}><Icon name={user?"logout":"lock"} size={13}/>{user?"Staff sign out":"Staff login"}</button></footer>
-    {login && <Login onClose={()=>setLogin(false)} onUser={u=>{changeUser(u);setLogin(false);window.location.hash="layout";setNotice("");window.setTimeout(()=>directoryRef.current?.scrollIntoView({block:"nearest"}),100);}}/>}
+    <footer className="site-footer"><div><img src="/favicon.svg" alt="" width="24" height="24"/><span>Naya Baazar <b>·</b> Defence Garden</span></div><button className="staff-login" onClick={()=>user?void logout():openManagement()}><Icon name={user?"logout":"lock"} size={13}/>{user?"Staff sign out":"Staff login"}</button></footer>
+    {managerOpen && !sessionReady && <div className="session-loading" role="status">Checking staff session…</div>}
+    {managerOpen && sessionReady && (user
+      ? <ShopManager initialId={selected ?? (floor === "ground" ? 1 : 112)} records={inventory} network={network} onSave={save} onRefresh={()=>void refresh()} onClose={()=>setManagerOpen(false)} onLocate={locateShop}/>
+      : <Login onClose={()=>setManagerOpen(false)} onUser={u=>{changeUser(u);setNotice("");void refresh();}}/>)}
   </>;
 }

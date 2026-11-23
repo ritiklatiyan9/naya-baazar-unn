@@ -5,6 +5,9 @@ import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
 import { westPassageWalkway, wingBoundaries } from "./wings";
 import { cafeTableFootprints } from "./cafes";
+import { entranceLength, entrancePoint } from "./entranceLayout";
+import { entranceFountainFootprints } from "./entranceFountain";
+import { entrancePalmTrunks } from "./entrancePalms";
 import { glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
@@ -27,7 +30,7 @@ export type ModelState = {
   selected: number | null;
   statuses: Record<number, Booking>;
 };
-type WalkingView = "street" | "gallery" | "delivery";
+type WalkingView = "street" | "gallery" | "delivery" | "entrance";
 export type CameraView = "overview" | "courtyard" | WalkingView;
 
 export async function createViewer(host: HTMLDivElement, signal: AbortSignal, options: ViewOptions) {
@@ -105,7 +108,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     backdrop.position.y = -1.1;
     backdrop.receiveShadow = true;
     scene.add(backdrop);
-    const { boardOutline, activity } = buildMarket(scene, groundUnits, firstUnits);
+    const { boardOutline, activity, updateFountain } = buildMarket(scene, groundUnits, firstUnits);
     const boardBounds = new T.Box2().setFromPoints(boardOutline);
     const horizon = walkingHorizon(() => { if (!closed) render(); });
     horizon.visible = false;
@@ -130,6 +133,10 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     const raycaster = new T.Raycaster(),
       cursor = new T.Vector2();
     const framingPoints = boardOutline.map((p) => new T.Vector3(p.x, -1.05, p.y));
+    for (const palm of entrancePalmTrunks) {
+      const centre = entrancePoint(palm.x, palm.z);
+      framingPoints.push(new T.Vector3(centre.x, 7.1, centre.y));
+    }
     // Roofs and stair caps sit above the board and determine the top margin at low angles.
     for (const unit of firstUnits)
       for (const p of unit.outline) framingPoints.push(new T.Vector3(p.x, 2 * levelHeight + 2.75, p.y));
@@ -161,6 +168,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         if (lastTick) activityTime += Math.min((now - lastTick) / 1000, 0.15);
         lastTick = now;
         activity.update(activityTime);
+        updateFountain(activityTime);
         dirty = true;
       }
       if (dirty || (doorsMoving && now - lastDoorFrame >= 1000 / 30 - 1)) {
@@ -204,7 +212,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     function overview() {
       // On a phone, look further along the avenue so the long board fills a portrait frame.
       const wide = T.MathUtils.smoothstep(camera.aspect, 0.8, 1.9);
-      const azimuth = T.MathUtils.lerp(1.41, 2.38, wide);
+      const azimuth = T.MathUtils.lerp(-1.39, -0.76, wide);
       const direction = new T.Vector3(Math.sin(azimuth), 0.87 - 0.15 * wide, Math.cos(azimuth)).normalize();
       const right = new T.Vector3().crossVectors(camera.up, direction).normalize();
       const up = new T.Vector3().crossVectors(direction, right);
@@ -244,21 +252,25 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       camera.position.copy(controls.target).add(offset);
       controls.update();
     }
-    function onFoot() { return location === "street" || location === "gallery" || location === "delivery"; }
+    function onFoot() { return location !== "overview" && location !== "courtyard"; }
     function eyeHeight() {
       return (location === "gallery" ? shopFloorHeight.first : shopFloorHeight.ground) + 1.58;
     }
+    function fieldOfView() {
+      if (location === "entrance") return T.MathUtils.lerp(80, 60, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
+      return onFoot() ? 60 : 32;
+    }
     function walkingView(view: WalkingView) {
+      const entranceAim = T.MathUtils.lerp(3.1, 1.4, T.MathUtils.smoothstep(camera.aspect, 1, 1.85));
       const viewpoints = {
-        street:   { eye: [939, 569], target: [992, 603], drop: 0.31 },
-        gallery:  { eye: [1124, 747], target: [1069, 713], drop: 0.65 },
-        delivery: { eye: [833, 315], target: [870, 367], drop: 0.40 },
+        entrance: { eye: entrancePoint(-1.0, entranceLength - 0.85), target: entrancePoint(entranceAim, 4.8), drop: -0.12 },
+        street:   { eye: sheetPoint(939, 569), target: sheetPoint(992, 603), drop: 0.31 },
+        gallery:  { eye: sheetPoint(1124, 747), target: sheetPoint(1069, 713), drop: 0.65 },
+        delivery: { eye: sheetPoint(833, 315), target: sheetPoint(870, 367), drop: 0.40 },
       } as const;
-      const spot = viewpoints[view];
-      const eye = sheetPoint(spot.eye[0], spot.eye[1]);
-      const destination = sheetPoint(spot.target[0], spot.target[1]);
+      const { eye, target: destination, drop } = viewpoints[view];
       camera.position.set(eye.x, eyeHeight(), eye.y);
-      controls.target.set(destination.x, eyeHeight() - spot.drop, destination.y);
+      controls.target.set(destination.x, eyeHeight() - drop, destination.y);
       previousEye.copy(eye);
       controls.update();
     }
@@ -266,10 +278,12 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       const { width, height } = host.getBoundingClientRect();
       if (width < 2 || height < 2) return;
       camera.aspect = width / height;
+      camera.fov = fieldOfView();
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
       if (preset === "overview") overview();
       else if (preset === "courtyard") courtyard();
+      else if (preset === "entrance") walkingView("entrance");
       render();
     };
     function setView(view: CameraView) {
@@ -278,7 +292,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       const walking = onFoot();
       horizon.visible = walking;
       scene.background = walking ? skylineBackground : studioBackground;
-      camera.fov = walking ? 60 : 32;
+      camera.fov = fieldOfView();
       camera.near = walking ? 0.065 : 0.20;
       camera.updateProjectionMatrix();
       controls.minDistance = walking ? 1.1 : 7;
@@ -332,7 +346,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         let x: number, z: number;
         if (onFoot()) {
           const floor = location === "gallery" ? "first" : "ground";
-          paths[floor] ??= walkableFloor(boardBounds, floor, floor === "first" ? firstUnits : groundUnits);
+          paths[floor] ??= walkableFloor(boardBounds, boardOutline, floor, floor === "first" ? firstUnits : groundUnits);
           const movedEye = paths[floor]!.travel(previousEye, current.x, current.z);
           x = movedEye.x;
           z = movedEye.y;
@@ -560,7 +574,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
 }
 
 /** Floor-level navigation follows walkways and passes through the entrances into individual shop aisles. */
-function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
+function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, units: Unit[]) {
   const ppm = 6;
   const size = bounds.getSize(new T.Vector2());
   const canvas = document.createElement("canvas");
@@ -568,7 +582,7 @@ function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
   canvas.height = Math.ceil(size.y * ppm);
   const c = canvas.getContext("2d", { willReadFrequently: true })!;
   c.setTransform(ppm, 0, 0, ppm, -bounds.min.x * ppm, -bounds.min.y * ppm);
-  c.fillStyle = floor === "ground" ? "white" : "black";
+  c.fillStyle = "black";
   c.fillRect(bounds.min.x, bounds.min.y, size.x, size.y);
   function polygon(points: T.Vector2[]) {
     c.beginPath();
@@ -576,6 +590,10 @@ function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
     for (let i = 1; i < points.length; i++) c.lineTo(points[i].x, points[i].y);
     c.closePath();
     c.fill();
+  }
+  if (floor === "ground") {
+    c.fillStyle = "white";
+    polygon(boundary);
   }
   const glass = glassSetback[floor];
   for (const wing of wingBoundaries) {
@@ -616,6 +634,19 @@ function walkableFloor(bounds: T.Box2, floor: Floor, units: Unit[]) {
   polygon(westPassageWalkway);
   if (floor === "ground") {
     c.fillStyle = "black";
+    for (const {minX, minZ, maxX, maxZ} of entranceFountainFootprints) {
+      const margin = 0.19;
+      polygon([
+        entrancePoint(minX - margin, minZ - margin), entrancePoint(maxX + margin, minZ - margin),
+        entrancePoint(maxX + margin, maxZ + margin), entrancePoint(minX - margin, maxZ + margin),
+      ]);
+    }
+    for (const trunk of entrancePalmTrunks) {
+      const p = entrancePoint(trunk.x, trunk.z);
+      c.beginPath();
+      c.arc(p.x, p.y, trunk.radius + 0.19, 0, Math.PI * 2);
+      c.fill();
+    }
     for (const table of cafeTableFootprints(units)) {
       c.beginPath();
       c.arc(table.center.x, table.center.y, table.radius + 0.16, 0, Math.PI * 2);

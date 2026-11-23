@@ -20,6 +20,7 @@ type Controller = Awaited<ReturnType<typeof createViewer>>;
 const names = { ground: "Ground floor", first: "First floor" };
 const viewpoints: { view: CameraView; label: string }[] = [
   { view: "overview", label: "Overview" },
+  { view: "entrance", label: "Entrance road" },
   { view: "courtyard", label: "Courtyard" },
   { view: "street", label: "Shopfront walk" },
   { view: "gallery", label: "First-floor gallery" },
@@ -166,7 +167,7 @@ export default function ThreePlan(props: Props) {
     chooseView(view);
     window.history.replaceState(window.history.state, "", view === "overview" ? "#model" : "#model/" + view);
   }
-  const walking = cameraView === "street" || cameraView === "gallery" || cameraView === "delivery";
+  const walking = cameraView && cameraView !== "overview" && cameraView !== "courtyard";
   return (
     <section className="three-plan" ref={panel} aria-label="Interactive 3D shop model">
       <div className="three-head">
@@ -300,6 +301,7 @@ export default function ThreePlan(props: Props) {
         </button>}
       </div>
       <p className="three-caption">
+        {cameraView === "entrance" && "Entrance road · 71 ft long × 40 ft wide. "}
         {walking ? "Drag to look around." : "Drag to orbit."} Slide two fingers to move, pinch to zoom, or twist to turn.{" "}
         <span className="three-desktop-help">{walking && "Use W, A, S and D to walk. "}With a mouse, Shift-drag or right-drag to move. </span>
         Shop interiors and activity are illustrative.

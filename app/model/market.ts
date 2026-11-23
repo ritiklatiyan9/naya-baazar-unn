@@ -2,6 +2,9 @@ import * as T from "three";
 import { Parts, sheetPoint, type Unit } from "./geometry";
 import { buildMarketActivity } from "./marketActivity";
 import { asphaltTexture, courtyardRosette, paverTexture, turfTexture } from "./siteMaterials";
+import { boardOutline, entranceLength, entranceOrigin, entrancePoint, entranceWidth, entranceYaw } from "./entranceLayout";
+import { addEntranceFountain } from "./entranceFountain";
+import { addEntrancePalms, entrancePalmTrunks } from "./entrancePalms";
 
 function surface(shape: T.Shape, color: string, thickness: number, y: number, texture?: T.Texture) {
   const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 18 });
@@ -32,6 +35,46 @@ class SiteShape extends T.Shape {
       c = sheetPoint(x3, y3);
     return this.bezierCurveTo(a.x, -a.y, b.x, -b.y, c.x, -c.y);
   }
+}
+
+function groundShape(points: T.Vector2[]) {
+  return new T.Shape(points.map(p => new T.Vector2(p.x, -p.y)));
+}
+
+function buildEntrance(scene: T.Scene, asphaltMap: T.Texture, stone: T.Texture) {
+  const half = entranceWidth / 2;
+  const corners = (left: number, right: number) => [
+    entrancePoint(left, 0), entrancePoint(right, 0),
+    entrancePoint(right, entranceLength), entrancePoint(left, entranceLength),
+  ];
+  const road = surface(groundShape(corners(-half, half)), "#827c76", .087, -.055, asphaltMap);
+  road.name = "Entrance asphalt";
+  scene.add(road);
+
+  const pavement = groundShape(corners(half, 9.88));
+  const beds = new Parts();
+  for (const palm of entrancePalmTrunks) {
+    if (palm.x < 0) continue;
+    const rim = .43;
+    const ring = [[-rim, -rim], [-rim, rim], [rim, rim], [rim, -rim]].map(([x, z]) => {
+      const point = entrancePoint(palm.x + x, palm.z + z);
+      return new T.Vector2(point.x, -point.y);
+    });
+    pavement.holes.push(new T.Path(ring));
+    beds.box("#65533d", palm.x, .032, palm.z, rim * 2, .065, rim * 2);
+  }
+  const walk = surface(pavement, "#e3d7c0", .155, -.055, stone);
+  walk.name = "Entrance fountain walk";
+  scene.add(walk);
+
+  const landscape = new T.Group();
+  landscape.name = "Entrance landscaping";
+  landscape.position.set(entranceOrigin.x, 0, entranceOrigin.y);
+  landscape.rotation.y = entranceYaw;
+  scene.add(landscape);
+  beds.build(landscape);
+  addEntrancePalms(landscape);
+  return addEntranceFountain(landscape);
 }
 function tree(parts: Parts, px: number, pz: number, size: number, seed: number, planter: boolean) {
   const { x, y: z } = sheetPoint(px, pz);
@@ -146,11 +189,10 @@ function insetKerb(points: T.Vector2[]) {
 }
 
 export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Unit[]) {
-  const board = new SiteShape();
-  board.move(84, 128).line(1436, 128).line(1442, 134).line(1442, 844)
-    .line(1436, 850).line(84, 850).line(78, 844).line(78, 134).closePath();
-  const boardOutline = [sheetPoint(78, 128), sheetPoint(1442, 128), sheetPoint(1442, 850), sheetPoint(78, 850)];
-  scene.add(surface(board, "#827768", 0.66, -1.05));
+  const board = groundShape(boardOutline);
+  const base = surface(board, "#827768", 0.66, -1.05);
+  base.name = "Model plinth";
+  scene.add(base);
   scene.add(surface(board, "#474b42", 0.19, -0.39));
   const turf = surface(board, "#ffffff", 0.145, -0.2, turfTexture());
   turf.material[1].color.set("#48614d");
@@ -177,12 +219,15 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
     scene.add(paving);
   }
   const road = new SiteShape();
-  road.move(268, 850);
+  const joinLeft = entrancePoint(-entranceWidth / 2, 0), joinRight = entrancePoint(entranceWidth / 2, 0);
+  road.moveTo(joinLeft.x, -joinLeft.y);
   west.forEach(p => road.line(p.x, p.y));
   road.line(797, 128).line(875, 128);
   east.forEach(p => road.line(p.x, p.y));
-  road.line(384, 850).closePath();
-  const asphalt = surface(road, "#ffffff", 0.087, -0.055, asphaltTexture());
+  road.lineTo(joinRight.x, -joinRight.y).closePath();
+  const asphaltMap = asphaltTexture();
+  const asphalt = surface(road, "#ffffff", 0.087, -0.055, asphaltMap);
+  asphalt.name = "Market carriageway";
   asphalt.material[1].color.set("#60636a");
   scene.add(asphalt, insetKerb(west), insetKerb(east));
 
@@ -227,5 +272,6 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
     }
   });
   detail.build(scene);
-  return { boardOutline, activity: buildMarketActivity(scene, groundUnits, firstUnits) };
+  const updateFountain = buildEntrance(scene, asphaltMap, stone);
+  return { boardOutline, updateFountain, activity: buildMarketActivity(scene, groundUnits, firstUnits) };
 }

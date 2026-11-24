@@ -48,7 +48,7 @@ a { color: inherit; }
   min-height: 4.25rem;
   padding: .55rem clamp(.8rem, 1.45vw, 1.55rem);
   border: 1px solid #dfe4d9;
-  border-radius: 1.25rem;
+  border-radius: 999px;
   background: #fffefa;
   box-shadow: 0 12px 30px -20px #2e493e50;
 }
@@ -100,7 +100,10 @@ a { color: inherit; }
 .mobile-nav-label, .mobile-nav-icon, .download-short, .mobile-shop-search { display: none; }
 .atlas-main { outline: none; min-height: calc(100svh - 10rem); }
 .page-wrap { padding-block: clamp(2rem, 4vw, 4.65rem); }
-.landing-page { padding-block-start: clamp(1.375rem, 3vw, 3rem); }
+.landing-page { padding-block-start: .75rem; }
+body:has(.landing-page) .site-header { padding-block-start: .35rem; }
+@media (min-width:801px) { body:has(.landing-page) .header-inner { min-height: 3.5rem; padding-block: .3rem; } }
+.landing-page .offline { margin-block: .35rem; }
 
 .market-facts { background: #eeeade; border-top: 1px solid var(--line); }
 .facts-inner { display: grid; grid-template-columns: repeat(3,1fr); padding-block: 1.55rem; }
@@ -127,6 +130,7 @@ a { color: inherit; }
 .mode-switch a:not([aria-current]):hover { background: #e1dcce; }
 .explorer-actions .download { min-height: 44px; border-radius: 3px; background: transparent; }
 .landing-page .explorer-heading { flex-wrap: wrap; row-gap: 1.05rem; }
+.landing-page .explorer-grid { grid-template-columns: minmax(0,1fr); }
 .landing-page .mode-switch { flex: none; padding: 0; border: 0; background: none; }
 .landing-page .mode-switch a {
   min-height: 44px;
@@ -169,17 +173,6 @@ a { color: inherit; }
   pointer-events: none;
 }
 .model-launch > span { position: relative; z-index: 1; }
-.model-launch-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1px solid #ddcd9b55;
-  border-radius: .65rem;
-  background: #f3e9c41b;
-  color: #f1d698;
-}
 .model-launch:hover {
   border-color: #678469;
   background: linear-gradient(120deg, #426653, #234a3b 78%);
@@ -209,7 +202,7 @@ a { color: inherit; }
     padding-inline-start: max(.75rem, env(safe-area-inset-left));
     padding-inline-end: max(.75rem, env(safe-area-inset-right));
   }
-  .header-inner { display: flex; justify-content: space-between; min-height: 3.75rem; gap: .4rem; padding: .42rem .65rem; border-radius: 1rem; }
+  .header-inner { display: flex; justify-content: space-between; min-height: 3.75rem; gap: .4rem; padding: .42rem .85rem; border-radius: 999px; }
   .brand { gap: .45rem; }
   .brand img { width: 2.1rem; height: 2.1rem; }
   .brand strong { font-size: 1.25rem; }
@@ -275,4 +268,38 @@ a { color: inherit; }
 @media (min-width:801px) and (prefers-reduced-motion: no-preference) {
   .header-inner { animation: header-arrive .5s var(--ease-out); }
   @keyframes header-arrive { from { opacity: 0; transform: translateY(-.35rem); } }
+}
+
+/* Home: two round buttons (3D / 2D) float in a dock pinned to the bottom-left of the screen. */
+.landing-page .explorer-heading { margin: 0; animation: none; } /* a transform here would trap the fixed dock */
+body:has(.landing-page) .site-footer { padding-block-end: 5.75rem; }
+.landing-page .explorer-actions {
+  position: fixed; z-index: 7; inset-inline: 1.25rem auto; bottom: max(1rem, env(safe-area-inset-bottom));
+  width: max-content; flex-wrap: nowrap; gap: .4rem; padding: .4rem;
+  border: 1px solid #d9d3c3; border-radius: 999px;
+  background: #fffdf8d6; -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 20px 44px -18px #1c2f2870, 0 2px 6px #1c2f2814, inset 0 1px 0 #ffffffb0;
+}
+.landing-page .model-launch, .landing-page .mode-switch a {
+  flex: none; justify-content: center; width: 3.25rem; height: 3.25rem; min-width: 0; min-height: 0; padding: 0;
+  border-radius: 50%; font-size: 1rem; font-weight: 700; letter-spacing: 0;
+}
+.landing-page .model-launch::after { display: none; }
+@media (max-width:800px) {
+  .landing-page .explorer-actions { inset-inline: .75rem auto; bottom: calc(var(--phone-nav-height) + var(--phone-nav-inset) + .5rem); } /* sits above the phone tab bar */
+}
+
+/* Home: clicking a shop opens its details in a sheet that slides in from the right. */
+.shop-sheet.card {
+  position: fixed; z-index: 9; inset: 0 0 0 auto; width: min(22rem, 92vw);
+  overflow-y: auto; overscroll-behavior: contain; border-radius: 0; border-width: 0 0 0 1px; border-top: 2px solid #9e855b;
+  padding: 1rem 1.35rem max(1.25rem, env(safe-area-inset-bottom));
+  background: #fffdf8; box-shadow: -18px 0 44px -22px #1c2f2870;
+}
+.shop-sheet .shop-details { padding: 2.4rem 0 0; }
+.shop-sheet-close { position: absolute; top: .65rem; right: .65rem; min-width: 44px; min-height: 44px; }
+@media (min-width:1101px) { .landing-page.sheet-open { padding-inline-end: 23.5rem; } } /* wide screens: plan makes room instead of sitting under the sheet */
+@media (prefers-reduced-motion: no-preference) {
+  .shop-sheet { animation: shop-sheet-in .28s var(--ease-out); }
+  @keyframes shop-sheet-in { from { transform: translateX(100%); } }
 }

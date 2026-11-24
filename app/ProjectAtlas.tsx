@@ -136,44 +136,18 @@ function ShopDetails({unit,record,admin,onBack,onManage}:{unit:Unit;record?:Avai
   </div>;
 }
 
-function Directory({floor,inventory,selected,user,onSelect,onBack,onManage,onClose}:{floor:Floor;inventory:Inventory;selected:number|null;user:User|null;onSelect:(id:number)=>void;onBack:()=>void;onManage:()=>void;onClose?:()=>void}) {
-  const [query,setQuery] = useState("");
+function ShopSheet({unit,record,admin,onClose,onManage}:{unit:Unit;record?:Availability;admin:boolean;onClose:()=>void;onManage:()=>void}) {
   const panel = useRef<HTMLElement>(null);
-  const lastSelected = useRef(selected);
-  const inSheet = !!onClose;
+  useEffect(() => { panel.current?.querySelector<HTMLElement>(".shop-title h3")?.focus({preventScroll:true}); },[unit.id]);
   useEffect(() => {
-    if (inSheet && lastSelected.current !== selected) {
-      panel.current?.querySelector<HTMLElement>(selected ? ".shop-title h3" : ".sheet-heading h2")?.focus({preventScroll:true});
-    }
-    lastSelected.current = selected;
-  },[selected,inSheet]);
-  const filtered = plan.filter(u => query.trim() ? String(u.id).includes(query.trim().replace(/^0+(?=\d)/,"")) : u.floor===floor);
-  const unit = plan.find(u=>u.id===selected);
-  return <aside ref={panel} className={"directory card" + (user?" staff":"")} aria-label={user?"Shop management":"Shop directory"}>
-    {onClose ? <div className="sheet-heading">
-      {unit ? <button className="back-link" onClick={onBack}><Icon name="back" size={16}/>Shop directory</button> : <h2 tabIndex={-1}>Shop directory</h2>}
-      <button type="button" className="icon-button" aria-label="Close shop directory" onClick={onClose} autoFocus><Icon name="close"/></button>
-    </div> : <div className="directory-title"><span className="panel-icon"><Icon name={user?"lock":"shops"} size={21}/></span><div><h2>{user?"Manage shops":"Shop directory"}</h2></div></div>}
-    {unit ? <ShopDetails key={unit.id} unit={unit} record={inventory[unit.id]} admin={!!user} onBack={onClose ? undefined : onBack} onManage={onManage}/> : <>
-      <label className="directory-search"><Icon name="search"/><input aria-label="Find shop by number" placeholder="Find shop by number" value={query} onChange={e=>setQuery(e.target.value)} inputMode="numeric"/>{query && <button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><Icon name="close" size={15}/></button>}</label>
-      <div className="directory-meta"><span>{query.trim()?"Search results":floorName(floor)}</span><span>{filtered.length} {filtered.length===1?"shop":"shops"}</span></div>
-      <ul className="unit-list">{filtered.map(u=><li key={u.id}><button onClick={()=>onSelect(u.id)}><span className={"unit-icon "+(inventory[u.id]?.status || "unknown")}><Icon name="shops" size={17}/></span><span className="unit-info"><strong>{unitName(u.id)}</strong><small>{query.trim()?floorName(u.floor)+" · ":""}{numberText(u.feet)}</small></span><span className={"unit-status "+(inventory[u.id]?.status || "unknown")} title={statusLabel(inventory[u.id]?.status)}><i/><span className="sr">{statusLabel(inventory[u.id]?.status)}</span></span><Icon name="chevron" size={13}/></button></li>)}</ul>
-      {!filtered.length && <div className="empty-list">No shop matches that number.</div>}
-    </>}
+    const key = (e:KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector("dialog[open]")) onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  },[onClose]);
+  return <aside ref={panel} className="shop-sheet card" aria-label="Shop details">
+    <button type="button" className="icon-button shop-sheet-close" aria-label="Close shop details" onClick={onClose}><Icon name="close"/></button>
+    <ShopDetails key={unit.id} unit={unit} record={record} admin={admin} onManage={onManage}/>
   </aside>;
-}
-
-function DirectorySheet({onClose, children}:{onClose:()=>void; children:React.ReactNode}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current;
-    dialog?.showModal();
-    return () => dialog?.close();
-  }, []);
-  return <dialog ref={ref} className="directory-sheet" aria-label="Shop directory and dimensions"
-    onCancel={onClose} onClick={e=>{if (e.target===e.currentTarget) onClose();}}>
-    {children}
-  </dialog>;
 }
 
 function getView(): View {
@@ -185,14 +159,12 @@ export default function ProjectAtlas() {
   const [view,setView] = useState<View>("home");
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
-  const [modelDirectory,setModelDirectory] = useState(false);
-  const [compact,setCompact] = useState(false);
-  const [directorySheet,setDirectorySheet] = useState(false);
   const [managerOpen,setManagerOpen] = useState(false);
   const [notice,setNotice] = useState("");
   const {inventory,network,merge,refresh,user,changeUser,sessionReady} = useData();
   const onHome = view === "home";
-  const inLayout = onHome || view === "layout" || view === "model";
+  const inLayout = onHome || view === "layout" || view === "model"; // plan pages: round 3D/2D dock, shop details in a side sheet
+  const sheetUnit = inLayout ? plan.find(u=>u.id===selected) : undefined;
   const statuses = useMemo(()=>Object.fromEntries(Object.values(inventory).map(r=>[r.id,r.status])) as Record<number,Status>,[inventory]);
   useEffect(()=>{
     let previous: View | null = null;
@@ -202,29 +174,16 @@ export default function ProjectAtlas() {
       const changedPage = previous !== next;
       previous = next;
       setView(next);
-      setDirectorySheet(false);
       if (!switchingLayout || (changedPage && window.matchMedia(compactLayout).matches)) window.scrollTo(0,0);
     }
     route();window.addEventListener("hashchange",route);return ()=>window.removeEventListener("hashchange",route);
   },[]);
-  useEffect(() => {
-    const query = window.matchMedia(compactLayout);
-    const changed = () => { setCompact(query.matches); if (!query.matches) setDirectorySheet(false); };
-    changed();
-    query.addEventListener("change", changed);
-    return () => query.removeEventListener("change", changed);
-  },[]);
   function changeFloor(next:Floor){if(next!==floor){setFloor(next);setSelected(null);}}
-  function select(id:number, inspect=true) {
+  function select(id:number) {
     const unit = plan.find(u=>u.id===id);
     if (!unit) return;
     setFloor(unit.floor as Floor);
     setSelected(id);
-    if (!inspect) return;
-    if (window.matchMedia(compactLayout).matches) {
-      // The expanded 2D drawing already shows the selected shop inside its dialog.
-      if (!document.querySelector("dialog[open]")) setDirectorySheet(true);
-    } else if(view==="model") setModelDirectory(true);
   }
   async function save(id:number,status:Status,version:number) {
     const response=await fetch("/api/shops/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,version})});
@@ -235,13 +194,11 @@ export default function ProjectAtlas() {
     merge([data.shop]);return {shop:data.shop,conflict:false};
   }
   function openManagement() {
-    setDirectorySheet(false);
     setManagerOpen(true);
   }
   function locateShop(id: number) {
     setManagerOpen(false);
-    select(id, false);
-    if(view==="model" && !window.matchMedia(compactLayout).matches) setModelDirectory(true);
+    select(id);
     if (onHome || !inLayout) window.location.hash = "layout";
     window.requestAnimationFrame(() => document.querySelector(".explorer-grid")?.scrollIntoView({block:"start"}));
   }
@@ -249,7 +206,6 @@ export default function ProjectAtlas() {
     try{const response=await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!response.ok)throw new Error();changeUser(null);setManagerOpen(false);setNotice("Signed out.");}
     catch{setNotice("Sign-out could not be confirmed. Please try again.");}
   }
-  const directoryProps = {floor, inventory, selected, user, onSelect:select, onBack:()=>setSelected(null), onManage:openManagement};
   return <>
     <a className="skip" href="#main-content" onClick={e=>{e.preventDefault();document.getElementById("main-content")?.focus();}}>Skip to content</a>
     <header className="site-header">
@@ -277,50 +233,31 @@ export default function ProjectAtlas() {
       </div>
     </header>
     <main id="main-content" tabIndex={-1} className="atlas-main">
-      <div className={onHome ? "page-wrap landing-page" : "page-wrap"}>
+      <div className={inLayout ? "page-wrap landing-page" + (sheetUnit ? " sheet-open" : "") : "page-wrap"}>
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
       {inLayout && <section className="layout-view" aria-labelledby="layout-heading"><div className="section-heading explorer-heading">
-        <div>
-          <p className="eyebrow section-kicker"><span aria-hidden="true"/>{onHome ? "Unn, Shamli" : "The shop directory"}</p>
-          <h1 id="layout-heading">{view === "model" ? "Architectural model" : "Floor plan explorer"}</h1>
-          <p className="intro">{view === "model" ? "Explore the courtyard and shopfronts, or select a shop for its dimensions." : "Select a shop to explore its dimensions and availability."}</p>
-        </div>
+        <h1 id="layout-heading" className="sr">{view === "model" ? "Architectural model" : "Floor plan explorer"}</h1>
         <div className="explorer-actions">
-          {onHome && <a className="model-launch" href="#model">
-            <span className="model-launch-icon"><Icon name="cube" size={24}/></span>
-            <span>Explore 3D model</span>
-          </a>}
+          <a className="model-launch" href="#model" aria-current={view==="model"?"page":undefined} aria-label="Explore 3D model" title="Explore 3D model">3D</a>
           <nav className="mode-switch" aria-label="Layout view">
-            <a href="#layout" aria-current={view!=="model"?"page":undefined}><Icon name="grid" size={16}/>2D plan</a>
-            {!onHome && <a href="#model" aria-current={view==="model"?"page":undefined}><Icon name="cube" size={17}/>3D model</a>}
+            <a href="#layout" aria-current={view!=="model"?"page":undefined} aria-label="2D plan" title="2D plan">2D</a>
           </nav>
-          <a className="outline-button download" aria-label="Download floor plan PDF" href="/plans/naya-baazar-sizes.pdf" download>
-            <Icon name="down" size={16}/><span className="download-full">Download plan</span><span className="download-short">PDF</span>
-          </a>
         </div>
       </div>
-        {network==="error" && <div className="offline" role="status"><Icon name="info"/><span>{Object.keys(inventory).length?"Availability could not refresh. Showing the last received update.":"Shop availability is temporarily unavailable. You can still explore the plans and dimensions."}</span><button onClick={()=>void refresh()}>Retry</button></div>}
-        <div className={"explorer-grid" + (view==="model" && !modelDirectory?" model-wide":"")}>
+        {network==="error" && Object.keys(inventory).length>0 && <div className="offline" role="status"><Icon name="info"/><span>Availability could not refresh. Showing the last received update.</span><button onClick={()=>void refresh()}>Retry</button></div>}
+        <div className="explorer-grid">
           {view === "model"
             ? <Suspense fallback={<div className="model-loading" role="status">Loading 3D model…</div>}>
-                <ThreePlan directoryOpen={modelDirectory} onToggleDirectory={()=>setModelDirectory(open=>!open)} onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
+                <ThreePlan onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
               </Suspense>
             : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
-          <div id="layout-directory" className="directory-wrap" hidden={view==="model" && !modelDirectory}>
-            {!compact && (view!=="model" || modelDirectory) && <Directory {...directoryProps}/>}
-          </div>
         </div>
-        <button type="button" className="mobile-shop-search" aria-haspopup="dialog" onClick={()=>{setSelected(null);setDirectorySheet(true);}}>
-          <Icon name="search" size={20}/>Find a shop by number<Icon name="chevron" size={16}/>
-        </button>
-        {directorySheet && <DirectorySheet onClose={()=>setDirectorySheet(false)}>
-          <Directory {...directoryProps} onClose={()=>setDirectorySheet(false)}/>
-        </DirectorySheet>}
       </section>}
       {view==="details" && <ProjectDetails/>}
       {(view==="gallery" || view==="walkthrough") && <MediaView view={view}/>}
       </div>
       {onHome && <MarketFacts shopCount={plan.length}/>}
+      {sheetUnit && <ShopSheet unit={sheetUnit} record={inventory[sheetUnit.id]} admin={!!user} onClose={()=>setSelected(null)} onManage={openManagement}/>}
     </main>
     <footer className="site-footer"><div><img src="/favicon.svg" alt="" width="24" height="24"/><span>Naya Baazar <b>·</b> Defence Garden</span></div><button className="staff-login" onClick={()=>user?void logout():openManagement()}><Icon name={user?"logout":"lock"} size={13}/>{user?"Staff sign out":"Staff login"}</button></footer>
     {managerOpen && !sessionReady && <div className="session-loading" role="status">Checking staff session…</div>}

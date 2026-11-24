@@ -9,8 +9,6 @@ import { Icon } from "./icons";
 import "./ThreePlan.css";
 
 type Props = {
-  directoryOpen: boolean;
-  onToggleDirectory: () => void;
   floor: Floor;
   onFloor: (floor: Floor) => void;
   statuses: Record<number, Booking>;
@@ -259,9 +257,6 @@ export default function ThreePlan(props: Props) {
           </button>
         </div>
         <div className="three-head-actions">
-          {!fullscreen && <button type="button" className="three-directory" onClick={props.onToggleDirectory} aria-label="Shop directory" title="Shop directory" aria-controls="layout-directory" aria-expanded={props.directoryOpen}>
-            <Glyph name="directory" /><span>Shop directory</span>
-          </button>}
           {canExpand && (
           <button
             className="three-expand"

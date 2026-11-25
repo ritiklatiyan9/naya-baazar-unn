@@ -1,4 +1,5 @@
 import * as T from "three";
+import { castSunShadow } from "./realism";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { assemble, box, part, roadShadow } from "./vehicleGeometry";
 
@@ -104,6 +105,7 @@ export function car(parent: T.Group, paint: string, suv: boolean, shadowMaterial
   wheels.frustumCulled = false;
   group.scale.setScalar(scale);
   roadShadow(group, shadowMaterial, 2.28, 4.6);
+  castSunShadow(group);
   function update(point: T.Vector3, heading: number, distance: number) {
     group.position.set(point.x, .032, point.z); group.rotation.y = heading;
     const rotation = (distance / (.324 * scale)) % (2 * Math.PI);

@@ -1,4 +1,5 @@
 import * as T from "three";
+import { castSunShadow } from "./realism";
 import { LoftGeometry } from "three/addons/geometries/LoftGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -382,6 +383,7 @@ export function deliveryPickup(parent: T.Group, shadowMaterial: T.Material, body
     group.add(w);
     return w;
   }));
+  castSunShadow(group);
   return { group, closeCargo, wheels };
 }
 

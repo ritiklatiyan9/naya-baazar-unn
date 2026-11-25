@@ -1,4 +1,5 @@
 import * as T from "three";
+import { castSunShadow } from "./realism";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { headGeometry } from "./shopperAppearance";
@@ -492,6 +493,7 @@ export function riddenBike(parent: T.Group, scooter: boolean, shadowMaterial: T.
   assemble(group, k.matte, vehicleFinish("plastic", { roughness: .78 }));
   lamps(group, k.lamp);
   if (k.glass.length) assemble(group, k.glass, vehicleFinish("glass", { transparent: true, opacity: .28, depthWrite: false }));
+  castSunShadow(group);
   return (point: T.Vector3, heading: number, travel: number, bank: number) => {
     group.position.set(point.x, .034, point.z); group.rotation.set(0, heading, bank, "YXZ");
     shadow.rotation.set(-Math.PI / 2, 0, -bank, "ZYX"); // the bike leans over its contact line, the shadow stays on the road

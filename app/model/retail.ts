@@ -7,6 +7,7 @@ import { displayCount, displayDepth, shelfWidth, glassSetback, retailBays, shopE
 import { facadeFinish } from "./siteMaterials";
 import { shellBoundaries, wingBoundaries } from "./wings";
 import { floristBloom, floristLeaf, hangingShirt } from "./merchandiseGeometry";
+import { applyFinish } from "./realism";
 
 const themes = [
   { name: "THREAD", sub: "CLOTHING ATELIER", sign: "#713c38", wall: "#d1ad9a", accent: "#7e4d45", trim: "#ceae83" },
@@ -334,15 +335,15 @@ function checkoutFixtures(place: Arrangement, width: number, theme: typeof theme
   place("box", "#262c2b", printer, top + .139, depth + .089, .090, .007, .019);
   place("box", "#eee7d7", printer, top + .172, depth + .093, .072, .061, .007, 0, 0, -.24 * inwardSign);
 
-  // Packaging stays on the narrow wall ledge beside the clerk's shoulder.
-  const shelf = width * .31;
-  place("box", "#927454", shelf, 1.43, 2.235, .37, .032, .21);
+  // Packaging stays on a narrow storage ledge above the checkout sign, clear of the clerk's face from the door.
+  const shelf = width * .31, ledge = 2.22;
+  place("box", "#927454", shelf, ledge, 2.235, .37, .032, .21);
   for (let i = 0; i < 3; i++) {
     const x = shelf + (i - 1) * .098;
     const h = .162 + .033 * (i % 2), z = 2.23 + .016 * (i % 2);
-    place("box", i === 1 ? "#8e7161" : "#bd9b76", x, 1.449 + h / 2, z, .108, h, .059);
-    for (const side of [-1, 1]) place("cylinder", "#7f6851", x + side * .020, 1.465 + h, z, .006, .036, .006);
-    place("box", "#7f6851", x, 1.483 + h, z, .043, .006, .006);
+    place("box", i === 1 ? "#8e7161" : "#bd9b76", x, ledge + .019 + h / 2, z, .108, h, .059);
+    for (const side of [-1, 1]) place("cylinder", "#7f6851", x + side * .020, ledge + .035 + h, z, .006, .036, .006);
+    place("box", "#7f6851", x, ledge + .053 + h, z, .043, .006, .006);
   }
 
   const pack = width * .13;
@@ -604,10 +605,11 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
   }
   const glow={value:0};
   const roomFinish:T.MeshStandardMaterialParameters={vertexColors:true,side:T.DoubleSide,roughness:.85,emissive:"#b09474",emissiveIntensity:.075};
-  const rooms=interior.add(group,litAfterDark(new T.MeshStandardMaterial(roomFinish),glow));
+  // Painted walls and ceilings over a polished tile floor.
+  const rooms=interior.add(group,applyFinish(litAfterDark(new T.MeshStandardMaterial(roomFinish),glow),"paint",{floor:"tile",albedo:.7}));
   rooms.name="Shop interiors";
   // The outside of an end shop's partitions faces the gallery, so it stays unlit at night.
-  if (returns.position.length) returns.add(group,new T.MeshStandardMaterial(roomFinish)).name="Arcade wall returns";
+  if (returns.position.length) returns.add(group,applyFinish(new T.MeshStandardMaterial(roomFinish),"plaster")).name="Arcade wall returns";
   fittings.add(group,glow);
   const atlas=signAtlas();
   signs.add(group,new T.MeshBasicMaterial({map:atlas,color:atlas?"#fff7dd":"#514b40",side:T.DoubleSide})).name="Shop signs";

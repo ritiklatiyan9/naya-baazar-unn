@@ -102,8 +102,7 @@ export class Parts {
       new T.Quaternion().setFromUnitVectors(up, delta.normalize()),
     );
   }
-  build(group: T.Object3D) {
-    const material = new T.MeshStandardMaterial({ roughness: 0.72, metalness: 0.07 });
+  build(group: T.Object3D, material: T.Material = new T.MeshStandardMaterial({ roughness: 0.72, metalness: 0.07 })) {
     for (const [shape, pile] of this.entries) {
       const mesh = new T.InstancedMesh(primitives[shape](), material, pile.length);
       pile.forEach((p, i) => {

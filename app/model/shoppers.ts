@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { apronGeometry, clothTexture, garmentGeometry, hairGeometry, headGeometry, portraitGeometry, type Garment } from "./shopperAppearance";
+import { sunProjection, sunShadowMaterial } from "./realism";
 
 export type PersonPose = {
   x: number; z: number; floorY: number; heading: number;
@@ -396,6 +397,9 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
     grouped.set(part.form, pile);
   }
   const clothing = new T.MeshStandardMaterial({ roughness: .84, side: T.DoubleSide });
+  // Skin keeps a soft specular and a warm grazing sheen, as light scattering under the surface does.
+  const skin = new T.MeshPhysicalMaterial({ roughness: .5, side: T.DoubleSide, specularIntensity: .45,
+    sheen: .35, sheenRoughness: .55, sheenColor: new T.Color("#ff9c7c") });
   const shadows = new T.MeshBasicMaterial({ map: contactTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
   const fabrics = new Map<string,T.Material>();
   const textiles = new Map<Garment, T.Texture>();
@@ -403,6 +407,7 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
   function materialFor(form:Form) {
     if(form==="shadow")return shadows;
     if(form==="face")return faceMaterial;
+    if(form==="head"||form==="forearm"||form==="hand")return skin;
     const fabric: Garment | null = form==="workwear"||form==="shirt"||form==="tunic"||form==="linen"||form==="hair" ? form :
       form==="thigh"||form==="shin" ? "denim" : form==="sleeve"||form==="apron" ? "linen" : form==="hem" ? "tunic" : null;
     if(!fabric)return clothing;
@@ -410,7 +415,10 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
     const key = fabric + (draped ? "-draped" : "");
     if (!fabrics.has(key)) {
       if (!textiles.has(fabric)) textiles.set(fabric, clothTexture(fabric));
-      const material = new T.MeshStandardMaterial({ map: textiles.get(fabric), roughness: .88 });
+      // Woven cloth catches a soft sheen at grazing angles; hair a tighter glint.
+      const hair = fabric === "hair";
+      const material = new T.MeshPhysicalMaterial({ map: textiles.get(fabric), roughness: hair ? .5 : .88,
+        sheen: hair ? .7 : .4, sheenRoughness: hair ? .3 : .8, sheenColor: new T.Color(hair ? "#8c7a6a" : "#ffffff") });
       if (draped) {
         // Fabric below each hip follows that thigh. The middle stretches between the two legs.
         material.onBeforeCompile = shader => {
@@ -449,6 +457,27 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
     return { mesh, form, parts, portraits, hemSwing, tinted, active: [] as Part[] };
   });
   const matrix = new T.Matrix4();
+  // Sun shadows: each figure's simplified silhouette flattened onto its own floor along the sun direction.
+  const casters = people.flatMap(person => person.parts.filter(part => part.form === "silhouette"));
+  const shade = sunShadowMaterial();
+  const sunShadows = new T.InstancedMesh(humanGeometry("silhouette"), shade, casters.length);
+  sunShadows.name = "Shopper sun shadows";
+  sunShadows.frustumCulled = false;
+  sunShadows.receiveShadow = true;
+  sunShadows.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  sunShadows.userData.night = (on: boolean) => { shade.opacity = on ? .1 : .55; };
+  scene.add(sunShadows);
+  const flatten = new T.Matrix4();
+  function syncShadows() {
+    let count = 0;
+    for (const part of casters) {
+      if (!part.actor.visible) continue;
+      sunProjection(flatten, part.actor.root.position.y + .012);
+      sunShadows.setMatrixAt(count++, matrix.multiplyMatrices(part.joint.matrixWorld, part.local).premultiply(flatten));
+    }
+    sunShadows.count = count;
+    sunShadows.instanceMatrix.needsUpdate = true;
+  }
   // Pack each draw into the beginning of the instance buffers. Bodies that change detail or
   // disappear take no vertices in their previous draw. Colours and atlas cells follow the packed indices.
   function repack() {
@@ -486,6 +515,7 @@ export function makeShopperBatch(scene: T.Group, count: number, seedOffset: numb
       if (hemSwing) hemSwing.needsUpdate = true;
       mesh.instanceMatrix.needsUpdate = true;
     }
+    syncShadows();
   }
   repack();
   return {

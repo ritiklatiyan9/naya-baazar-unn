@@ -1,6 +1,8 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { addEntranceLights, addHighMasts, applyNight, highMastBases, nightComposer } from "./nightLights";
+import { addEntranceLights, addHighMasts, applyNight, highMastBases } from "./nightLights";
+import { createComposer, createSky, renderQuality, skyPalette, steadyShadowFilter, sunDirection } from "./realism";
+import { addSurroundings } from "./surroundings";
 import { bindSurfaceGestures } from "./gestures";
 import { buildStorey } from "./buildings";
 import { buildMarket } from "./market";
@@ -57,10 +59,13 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas,
     antialias: true,
     alpha: false,
-    powerPreference: "low-power",
+    // Figures' sun shadows use the stencil to darken overlapping limbs only once.
+    stencil: true,
+    powerPreference: "high-performance",
   });
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(32, 1, 0.15, 1200);
+  // The far plane reaches the hazy horizon of the surrounding farmland.
+  const camera = new T.PerspectiveCamera(32, 1, 0.15, 5000);
   const controls = new OrbitControls(camera, canvas);
   let frame = 0,
     closed = false;
@@ -80,16 +85,17 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas.remove();
   }
   try {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
+    const quality = renderQuality(renderer);
+    steadyShadowFilter();
+    // Desktop renders at the display's full density; an upscaled canvas reads as blur.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.occlusion ? 2 : 1.8));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
-    renderer.toneMapping = T.NeutralToneMapping;
-    renderer.toneMappingExposure = 1;
-    const studioBackground = new T.Color("#183a30");
-    const skylineBackground = new T.Color("#cfddde");
-    scene.background = studioBackground;
+    // A filmic curve keeps sunlit plaster from clipping while the arcades fall into soft shade.
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.92;
     canvas.setAttribute(
       "aria-label",
       "Interactive Naya Baazar market. Drag to orbit or look around. Slide two fingers, Shift-drag or right-drag to move. Pinch to zoom. Twist on a touchscreen to turn. Use WASD to move, Q and E to turn, plus and minus to zoom and Home for the overview.",
@@ -98,43 +104,38 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     canvas.tabIndex = 0;
     host.appendChild(canvas);
 
-    // Broad, neutral studio fill keeps the ivory stock distinct from the recessed glazing.
-    const sky = new T.HemisphereLight("#edf2f8", "#c3c4c3", 1.76);
+    // Daylight comes from the captured sky (image-based light) plus the sun; the hemisphere adds warm ground bounce.
+    const daylight = createSky(renderer, camera.far * .9);
+    cleanups.push(daylight.dispose);
+    scene.add(daylight.dome);
+    scene.environment = daylight.environment(false);
+    scene.environmentIntensity = 1;
+    scene.fog = new T.FogExp2(skyPalette.day.horizon.clone(), .00042);
+    const sky = new T.HemisphereLight("#dfe9f5", "#b6a88f", .35);
     scene.add(sky);
-    const key = new T.DirectionalLight("#fffaf5", 2.25);
-    key.position.set(-48, 88, 60);
+    const key = new T.DirectionalLight("#fff0d9", 3.1);
+    key.position.copy(sunDirection).multiplyScalar(180);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    Object.assign(key.shadow.camera, { left: -102, right: 102, top: 87, bottom: -87, near: 1, far: 240 });
-    key.shadow.bias = -0.00012;
-    key.shadow.normalBias = 0.026;
-    key.shadow.radius = 2.2;
+    key.shadow.mapSize.setScalar(quality.shadowMap);
+    // About one shadow texel (5.6 cm on the 4096 map) of normal offset keeps sunlit walls free of acne bands.
+    key.shadow.bias = -0.0002;
+    key.shadow.normalBias = 0.065;
+    // The sun's half-degree disc gives only a few centimetres of penumbra at arcade height.
+    key.shadow.radius = 1;
     scene.add(key);
-    const fill = new T.DirectionalLight("#e6edf7", 0.68);
+    const fill = new T.DirectionalLight("#e6edf7", 0.18);
     fill.position.set(47, 38, -65);
     scene.add(fill);
-
-    const backdrop = new T.Mesh(
-      new T.PlaneGeometry(2200, 2200),
-      new T.MeshStandardMaterial({ color: "#264838", roughness: 1 }),
-    );
-    backdrop.rotation.x = -Math.PI / 2;
-    backdrop.position.y = -1.1;
-    backdrop.receiveShadow = true;
-    scene.add(backdrop);
+    const countryside = addSurroundings(scene, { trees: quality.occlusion ? 1 : .55 });
     const { boardOutline, activity, updateFountain } = buildMarket(scene, groundUnits, firstUnits);
+    fitSunShadow(key, boardOutline);
     addHighMasts(scene);
     addEntranceLights(scene);
     const boardBounds = new T.Box2().setFromPoints(boardOutline);
-    const horizon = walkingHorizon(() => { if (!closed) render(); });
-    horizon.visible = false;
-    scene.add(horizon);
     const refreshMaterials = () => queueMicrotask(() => { if (!closed) render(); });
     const ground = buildStorey(groundUnits, "ground", refreshMaterials),
       first = buildStorey(firstUnits, "first", refreshMaterials);
     scene.add(ground.group, first.group);
-    // The soft contact immediate to a model on a worktop stays fixed as the camera orbits.
-    scene.add(contactShadow([boardOutline], -1.09, 1.15, 0.26));
     scene.add(contactShadow(groundUnits.map((unit) => unit.outline), 0.113, 0.62, 0.18));
     controls.enableDamping = false;
     controls.enablePan = true;
@@ -176,7 +177,17 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     let lastDoorFrame = 0;
     let doorsMoving = false;
     let night = false;
-    let composer: ReturnType<typeof nightComposer> | null = null;
+    let composer: ReturnType<typeof createComposer> | null = null;
+    // Desktop frames always pass through the composer for ambient occlusion; phones only for the night bloom.
+    function pipeline() {
+      if (!composer) {
+        const output = (composer = createComposer(renderer, scene, camera, quality.occlusion));
+        const { width, height } = host.getBoundingClientRect();
+        output.setSize(Math.max(2, width), Math.max(2, height));
+        cleanups.push(output.dispose);
+      }
+      return composer;
+    }
     let state: ModelState = { floor: "ground", entire: true, selected: null, statuses: {} };
     let lastState: ModelState | undefined;
     let outline: T.Mesh | undefined;
@@ -207,7 +218,9 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
         const upperMoving = first.updateDoors(camera.position, step, activity.openDoors.first);
         doorsMoving = groundMoving || upperMoving;
         activity.setCameraPosition(camera.position);
-        if (composer && night) composer.render();
+        daylight.setTime(activityTime);
+        countryside.setTime(activityTime);
+        if (quality.occlusion || night) pipeline().render(camera.position.distanceTo(controls.target));
         else renderer.render(scene, camera);
         dirty = false;
       }
@@ -220,29 +233,23 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
     function setNight(on: boolean) {
       if (on === night) return;
       night = on;
-      // The bloom exists only for night frames, so the day view renders exactly as before.
-      if (on && !composer) {
-        const output = (composer = nightComposer(renderer, scene, camera));
-        cleanups.push(() => {
-          output.passes.forEach((pass) => pass.dispose());
-          output.dispose();
-        });
-      }
+      // Bloom joins the composer only for night frames.
+      if (on) pipeline().setNight(true);
+      else composer?.setNight(false);
+      daylight.setNight(on);
+      scene.environment = daylight.environment(on);
+      scene.environmentIntensity = on ? 0.55 : 1;
+      (scene.fog as T.FogExp2).color.copy(on ? skyPalette.night.horizon : skyPalette.day.horizon);
       // Blue-hour ambient keeps the whole site readable. Lamps add warmth without a black void around them.
-      sky.color.set(on ? "#7c8db6" : "#edf2f8");
-      sky.groundColor.set(on ? "#3c3a44" : "#c3c4c3");
-      sky.intensity = on ? 1.25 : 1.76;
-      key.color.set(on ? "#bcc8ea" : "#fffaf5");
-      key.intensity = on ? 0.6 : 2.25;
+      sky.color.set(on ? "#7c8db6" : "#dfe9f5");
+      sky.groundColor.set(on ? "#3c3a44" : "#b6a88f");
+      sky.intensity = on ? 1.1 : 0.35;
+      key.color.set(on ? "#bcc8ea" : "#fff0d9");
+      key.intensity = on ? 0.45 : 3.1;
       // After dark the fill turns upward: the warm bounce from lit shops and paving onto every ceiling.
       fill.color.set(on ? "#ffc890" : "#e6edf7");
-      fill.intensity = on ? 0.8 : 0.68;
+      fill.intensity = on ? 0.8 : 0.18;
       fill.position.set(on ? 0 : 47, on ? -60 : 38, on ? 0 : -65);
-      studioBackground.set(on ? "#0d1628" : "#183a30");
-      backdrop.material.color.set(on ? "#2c3850" : "#264838");
-      // The horizon photograph is tinted to dusk, and the sky behind it takes the same tint so no seam shows.
-      horizon.material.color.set(on ? "#33405f" : "#ffffff");
-      skylineBackground.set("#cfddde").multiply(horizon.material.color);
       applyNight(scene, on);
       renderer.shadowMap.needsUpdate = true;
       render();
@@ -367,8 +374,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       walkingHeight = shopFloorHeight[walkingFloor];
       location = view;
       const walking = onFoot();
-      horizon.visible = walking;
-      scene.background = walking ? skylineBackground : studioBackground;
       camera.fov = fieldOfView();
       camera.near = walking ? 0.065 : 0.20;
       camera.updateProjectionMatrix();
@@ -414,7 +419,6 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       const elapsed = T.MathUtils.clamp(seconds, 0, tour.duration);
       const pose = walkthroughs[tour.floor].sample(elapsed, camera.aspect);
       aerial = pose.aerial;
-      horizon.visible = !aerial;
       camera.position.fromArray(pose.eye);
       controls.target.fromArray(pose.target);
       camera.lookAt(controls.target);
@@ -908,45 +912,6 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
   };
 }
 
-/** A distant belt of trees sampled from the project render finishes the horizon at pedestrian height. */
-function walkingHorizon(changed: () => void) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 256;
-  const c = canvas.getContext("2d")!;
-  const sky = c.createLinearGradient(0, 0, 0, 210);
-  sky.addColorStop(0, "#cfddde");
-  sky.addColorStop(0.7, "#e9e5ce");
-  sky.addColorStop(0.72, "#6f8069");
-  sky.addColorStop(1, "#274a34");
-  c.fillStyle = sky;
-  c.fillRect(0, 0, canvas.width, canvas.height);
-  const map = new T.CanvasTexture(canvas);
-  map.colorSpace = T.SRGBColorSpace;
-  map.wrapS = T.MirroredRepeatWrapping;
-  map.repeat.x = 8;
-  const img = new Image();
-  img.onload = () => {
-    // The west half of the aerial photograph contains a continuous tree line and open sky.
-    c.drawImage(img, img.width * 0.05, img.height * 0.015, img.width * 0.35, img.height * 0.29,
-      0, 115, canvas.width, 141);
-    const blend = c.createLinearGradient(0, 114, 0, 157);
-    blend.addColorStop(0, "#dde2d6");
-    blend.addColorStop(1, "rgba(221,226,214,0)");
-    c.fillStyle = blend;
-    c.fillRect(0, 114, canvas.width, 43);
-    map.needsUpdate = true;
-    changed();
-  };
-  img.src = "/media/render-09-small.webp";
-  const skyMesh = new T.Mesh(new T.CylinderGeometry(175, 175, 96, 64, 1, true),
-    new T.MeshBasicMaterial({ map, side: T.BackSide, toneMapped: false, depthWrite: false }));
-  skyMesh.position.y = 16;
-  skyMesh.renderOrder = -2;
-  map.addEventListener("dispose", () => { img.onload = null; });
-  return skyMesh;
-}
-
 /** A small baked contact texture adds ambient occlusion without a per-frame postprocess. */
 function contactShadow(outlines: T.Vector2[][], height: number, softness: number, opacity: number) {
   const bounds = new T.Box2();
@@ -1014,4 +979,20 @@ function roofOutline(unit: Unit, height: number, mat: T.Material) {
   geo.setAttribute("position", new T.Float32BufferAttribute(vertices, 3));
   mat.side = T.DoubleSide;
   return new T.Mesh(geo, mat);
+}
+
+/** Fit the sun's orthographic shadow camera around the plot and the nearest belt of trees. */
+function fitSunShadow(light: T.DirectionalLight, outline: T.Vector2[]) {
+  const view = new T.OrthographicCamera();
+  view.position.copy(light.position);
+  view.lookAt(light.target.position);
+  view.updateMatrixWorld();
+  const box = new T.Box3();
+  for (const p of outline) for (const y of [-0.2, 14])
+    box.expandByPoint(new T.Vector3(p.x, y, p.y).applyMatrix4(view.matrixWorldInverse));
+  box.expandByScalar(18);
+  Object.assign(light.shadow.camera, {
+    left: box.min.x, right: box.max.x, bottom: box.min.y, top: box.max.y, near: Math.max(0.5, -box.max.z), far: -box.min.z + 40,
+  });
+  light.shadow.camera.updateProjectionMatrix();
 }

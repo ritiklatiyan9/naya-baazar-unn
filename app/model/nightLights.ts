@@ -1,9 +1,6 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { sheetPoint, type Floor, type Unit } from "./geometry";
 import { eastFacadeAt, entranceLength, entranceOrigin, entrancePoint, entranceSign, entranceYaw, fountainWallFace as face } from "./entranceLayout";
 import { entranceFountainFootprints } from "./entranceFountain";
@@ -23,8 +20,8 @@ export function applyNight(root: T.Object3D, on: boolean) {
  * Renders the scene with multisampling, then passes on a copy with every non-finite value removed.
  * A single NaN from any material would otherwise be blurred across the whole frame by the bloom.
  */
-class ScenePass extends Pass {
-  private target = new T.WebGLRenderTarget(1, 1, { type: T.HalfFloatType, samples: 4 });
+export class ScenePass extends Pass {
+  private target = new T.WebGLRenderTarget(1, 1, { type: T.HalfFloatType, samples: 4, stencilBuffer: true });
   private copy = new FullScreenQuad(new T.ShaderMaterial({
     uniforms: { frame: { value: this.target.texture } },
     vertexShader: "varying vec2 at; void main() { at = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -48,17 +45,6 @@ class ScenePass extends Pass {
     this.copy.material.dispose();
     this.copy.dispose();
   }
-}
-
-/** Night frames pass through a gentle bloom so lamps and lit signs glow. The day view never uses it. */
-export function nightComposer(renderer: T.WebGLRenderer, scene: T.Scene, camera: T.Camera) {
-  const composer = new EffectComposer(renderer);
-  const bloom = new UnrealBloomPass(new T.Vector2(1, 1), .3, .25, .8);
-  (bloom.highPassUniforms as Record<string, T.IUniform<number>>).smoothWidth.value = .25;
-  composer.addPass(new ScenePass(scene, camera));
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
-  return composer;
 }
 
 function merged(parts: T.BufferGeometry[]) {

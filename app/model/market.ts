@@ -1,18 +1,19 @@
 import * as T from "three";
 import { Parts, sheetPoint, type Unit } from "./geometry";
 import { buildMarketActivity } from "./marketActivity";
-import { asphaltTexture, courtyardRosette, paverTexture, turfTexture } from "./siteMaterials";
+import { courtyardRosette } from "./siteMaterials";
+import { applyFinish, finished, type Finish } from "./realism";
 import { boardOutline, eastFacadeAt, entranceLength, entranceOrigin, entrancePoint, entranceWidth, entranceYaw } from "./entranceLayout";
 import { addEntranceFountain } from "./entranceFountain";
 import { addGardenTrees } from "./gardenTrees";
 import { addEntrancePalms, entrancePalmTrunks } from "./entrancePalms";
 import { roadCenterMarkings } from "./carriageway";
 
-function surface(shape: T.Shape, color: string, thickness: number, y: number, texture?: T.Texture) {
+function surface(shape: T.Shape, color: string, thickness: number, y: number, finish?: Finish) {
   const geometry = new T.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 18 });
   geometry.rotateX(-Math.PI / 2);
   geometry.translate(0, y, 0);
-  const top = new T.MeshStandardMaterial({ color, roughness: 0.94, map: texture ?? null });
+  const top = finish ? finished(finish, { color, roughness: 0.9 }, { macro: 0.1 }) : new T.MeshStandardMaterial({ color, roughness: 0.94 });
   const side = new T.MeshStandardMaterial({
     color: new T.Color(color).multiplyScalar(0.78),
     roughness: 0.93,
@@ -43,7 +44,7 @@ function groundShape(points: T.Vector2[]) {
   return new T.Shape(points.map(p => new T.Vector2(p.x, -p.y)));
 }
 
-function buildEntrance(scene: T.Scene, stone: T.Texture, wind: T.IUniform<number>) {
+function buildEntrance(scene: T.Scene, wind: T.IUniform<number>) {
   const half = entranceWidth / 2;
   const shoulder = 9.88;
   const pavement = groundShape([
@@ -62,7 +63,7 @@ function buildEntrance(scene: T.Scene, stone: T.Texture, wind: T.IUniform<number
     pavement.holes.push(new T.Path(ring));
     beds.box("#65533d", palm.x, .032, palm.z, rim * 2, .065, rim * 2);
   }
-  const walk = surface(pavement, "#e3d7c0", .155, -.055, stone);
+  const walk = surface(pavement, "#ddd0b8", .155, -.055, "stone");
   walk.name = "Entrance fountain walk";
   scene.add(walk);
 
@@ -154,7 +155,7 @@ function insetKerb(points: T.Vector2[]) {
   const geo = new T.BufferGeometry();
   geo.setAttribute("position", new T.Float32BufferAttribute(vertices, 3));
   geo.computeVertexNormals();
-  const kerb = new T.Mesh(geo, new T.MeshStandardMaterial({ color: "#c9c6ba", roughness: 0.9, side: T.DoubleSide }));
+  const kerb = new T.Mesh(geo, finished("stone", { color: "#c9c6ba", roughness: 0.9, side: T.DoubleSide }, { albedo: .6 }));
   kerb.receiveShadow = true;
   return kerb;
 }
@@ -165,7 +166,8 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   base.name = "Model plinth";
   scene.add(base);
   scene.add(surface(board, "#474b42", 0.19, -0.39));
-  const turf = surface(board, "#ffffff", 0.145, -0.2, turfTexture());
+  // The lawn shares its colour and blade texture with the verges beyond the plot.
+  const turf = surface(board, "#5f6c3c", 0.145, -0.2, "grass");
   turf.material[1].color.set("#48614d");
   scene.add(turf);
 
@@ -183,9 +185,8 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
     .line(674, 826).line(388, 818).line(388, 817);
   east.slice(0, -1).reverse().forEach(p => eastCourt.line(p.x, p.y));
   eastCourt.closePath();
-  const stone = paverTexture();
   for (const court of [westCourt, eastCourt]) {
-    const paving = surface(court, "#ffffff", 0.165, -0.055, stone);
+    const paving = surface(court, "#e2d8c6", 0.165, -0.055, "stone");
     paving.material[1].color.set("#b9b5a8");
     scene.add(paving);
   }
@@ -199,7 +200,7 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   east.forEach(p => road.line(p.x, p.y));
   road.lineTo(joinRight.x, -joinRight.y).lineTo(outsideRight.x, -outsideRight.y).closePath();
   const roadBase = -.055, asphaltThickness = .087;
-  const asphalt = surface(road, "#ffffff", asphaltThickness, roadBase, asphaltTexture());
+  const asphalt = surface(road, "#4a4a4c", asphaltThickness, roadBase, "asphalt");
   asphalt.name = "Market carriageway";
   asphalt.material[1].color.set("#363739");
   scene.add(asphalt, roadCenterMarkings(roadBase + asphaltThickness + .004), insetKerb(west), insetKerb(east));
@@ -207,7 +208,7 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
   const detail = new Parts();
   const med = sheetPoint(828, 650);
   const radius = med.distanceTo(sheetPoint(888, 650));
-  const disc = new T.Mesh(new T.CircleGeometry(radius, 120), courtyardRosette());
+  const disc = new T.Mesh(new T.CircleGeometry(radius, 120), applyFinish(courtyardRosette(), "stone", { albedo: 0.45, roughness: 0.7 }));
   disc.rotation.x = -Math.PI / 2;
   disc.position.set(med.x, 0.122, med.y);
   disc.receiveShadow = true;
@@ -242,7 +243,7 @@ export function buildMarket(scene: T.Scene, groundUnits: Unit[], firstUnits: Uni
     }
   });
   detail.build(scene);
-  const updateWater = buildEntrance(scene, stone, breezeTime);
+  const updateWater = buildEntrance(scene, breezeTime);
   function updateFountain(seconds: number) {
     breezeTime.value = seconds;
     updateWater(seconds);

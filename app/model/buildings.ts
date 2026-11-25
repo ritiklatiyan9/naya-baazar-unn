@@ -10,6 +10,8 @@ import { facadeFinish } from "./siteMaterials";
 import { buildGalleryStair } from "./galleryStair";
 import { pavilionStair, stairRectangle } from "./pavilionStairLayout";
 import { addNeonBorder, addShopLanterns } from "./nightLights";
+import { finished, type Finish } from "./realism";
+import { addRooftopPlant } from "./rooftopPlant";
 
 const shades = {
   ...facadeFinish,
@@ -19,38 +21,9 @@ const available = new T.Color("#88b697");
 const booked = new T.Color("#ce756d");
 const unreported = new T.Color("#d8d5cb");
 
-function matte(color: string) {
-  return new T.MeshStandardMaterial({ color, roughness: 0.85, side: T.DoubleSide });
-}
-
-// A seamless, uniformly scaled square roof tile. UVs use architectural metres on every wing.
-function roofFinish() {
-  const size = 128;
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const joint = x % 32 === 0 || y % 32 === 0;
-      const bevel = x % 32 === 1 || y % 32 === 1;
-      const grain = ((x * 89 + y * 151 + x * y * 29) % 11) / 3 - 1.8;
-      const tile = (Math.floor(x / 32) * 7 + Math.floor(y / 32) * 11) % 5 - 2;
-      const tone = Math.round(grain + tile + (joint ? -29 : bevel ? 3 : 0));
-      const i = (y * size + x) * 4;
-      data[i] = 230 + tone;
-      data[i + 1] = 224 + tone;
-      data[i + 2] = 211 + tone;
-      data[i + 3] = 255;
-    }
-  }
-  const texture = new T.DataTexture(data, size, size);
-  texture.wrapS = texture.wrapT = T.RepeatWrapping;
-  texture.repeat.set(0.55, 0.55);
-  texture.magFilter = T.LinearFilter;
-  texture.minFilter = T.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = 4;
-  texture.colorSpace = T.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return new T.MeshStandardMaterial({ map: texture, roughness: 0.94 });
+/** Painted sand-float render; `floor` puts a different finish on upward faces of the same mesh. */
+function matte(color: string, finish: Finish = "plaster", floor?: Finish, macro = 0.07) {
+  return finished(finish, { color, roughness: 0.88, side: T.DoubleSide }, { floor, macro });
 }
 
 class Surface {
@@ -82,14 +55,17 @@ function inset(wing: Boundary, index: number, distance: number) {
 function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number) {
   const walls = new Surface();
   const soffits = new Surface();
+  const walkway = new Surface();
   const coping = new Surface();
   const reveals = new Surface();
   const details = new Parts();
+  const stone = new Parts();
   const piers: T.Vector2[] = [];
   const plaster = matte(shades.plaster);
   const fascia = matte(shades.edge);
-  const graphite = matte(shades.coping);
-  const tiled = roofFinish();
+  const graphite = matte(shades.coping, "paint");
+  // The lower slab's top is the polished gallery floor; the upper slab is a weathered roof terrace.
+  const tiled = upper ? matte("#d9d2c4", "plaster", "terrace", 0.16) : matte("#ece6da", "plaster", "tile");
   const recess = upper ? glassSetback.first : glassSetback.ground;
   const low = bottom + 0.14;
   const high = deck - (upper ? 0.73 : 0.55);
@@ -145,7 +121,7 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
         reveals.quad(at(a, high - 0.07), at(b, high - 0.07), at(b, high), at(a, high));
         soffits.quad(at(a, high), at(b, high), at(bi, high), at(ai, high));
         // The tiled balcony below belongs to the lower storey. Provide the same walking surface at street level.
-        if (!upper) soffits.quad(at(ai, low + 0.012), at(bi, low + 0.012), at(b, low + 0.012), at(a, low + 0.012));
+        if (!upper) walkway.quad(at(ai, low + 0.012), at(bi, low + 0.012), at(b, low + 0.012), at(a, low + 0.012));
 
         if (!wing.publicEdge[(i + count - 1) % count]) {
           nextPier = distance + 0.5;
@@ -158,8 +134,13 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
         while (nextPier <= distance + length) {
           const anchor = place(nextPier, 0.34);
           piers.push(anchor);
-          const width = upper ? 0.22 : 0.40;
-          details.box(shades.plaster, anchor.x, (low + high) / 2, anchor.y, width, high - low, upper ? 0.32 : 0.47, yaw);
+          const width = upper ? 0.22 : 0.40, depth = upper ? 0.32 : 0.47;
+          // Each pier stands on the walking surface with a flamed-granite plinth and a moulded capital band.
+          const foot = upper ? bottom : low, plinth = upper ? 0.2 : 0.3;
+          details.box(shades.plaster, anchor.x, (foot + high) / 2, anchor.y, width, high - foot, depth, yaw);
+          stone.box("#4b4744", anchor.x, foot + plinth / 2, anchor.y, width + 0.05, plinth, depth + 0.05, yaw);
+          details.box(shades.edge, anchor.x, high - 0.06, anchor.y, width + 0.07, 0.12, depth + 0.07, yaw);
+          details.box(shades.lining, anchor.x, high - 0.155, anchor.y, width + 0.03, 0.07, depth + 0.03, yaw);
           nextPier += 3.35;
         }
       } else {
@@ -174,10 +155,11 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   }
   walls.build(group, plaster, true);
   // The ceiling lining is coplanar with the underside of the slab above it, so it is drawn in front.
-  const lining = matte(shades.lining);
+  const lining = matte(shades.lining, "paint");
   lining.polygonOffset = true;
   lining.polygonOffsetFactor = lining.polygonOffsetUnits = -1;
   soffits.build(group, lining, false);
+  walkway.build(group, matte("#e9e3d6", "tile"), false);
   coping.build(group, graphite, true);
   reveals.build(group, matte(shades.fasciaShadow), false);
   if (upper) {
@@ -208,8 +190,10 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
       plate(corners(width - 0.07, depth - 0.07), capBottom, capDepth, true);
     }
     addRoofTanks(group, headhouses, capBottom + capDepth);
+    addRooftopPlant(group, deck, headhouses.map(({ centre }) => centre));
   }
-  details.build(group);
+  details.build(group, finished("plaster", { roughness: 0.88 }, { macro: 0.06 }));
+  stone.build(group, finished("granite", { roughness: 0.5 }));
   return { soffit: high, walkway: upper ? bottom : low + 0.012, parapet, piers };
 }
 

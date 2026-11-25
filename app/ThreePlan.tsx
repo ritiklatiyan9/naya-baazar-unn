@@ -15,7 +15,7 @@ type Props = {
   selected: number | null;
   onSelect: (id: number) => void;
   onClearSelection?: () => void;
-  onShowPlan?: () => void;
+  planHref: string;
 };
 type Controller = Awaited<ReturnType<typeof createViewer>>;
 const names = { ground: "Ground floor", first: "First floor" };
@@ -290,7 +290,7 @@ export default function ThreePlan(props: Props) {
             <strong>3D view unavailable</strong>
             <span>Explore the same shops in the interactive floor plan.</span>
             <div>
-              <a href="#layout" onClick={() => props.onShowPlan?.()}>
+              <a href={props.planHref}>
                 Open 2D plan
               </a>
               <button onClick={() => setAttempt((n) => n + 1)}>Retry 3D</button>

@@ -14,6 +14,8 @@ const symbols: Record<string, ReactNode> = {
   film: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></>,
   image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.4"/><path d="m4 17 5-5 4 4 3-3 5 5"/></>,
   chevron: <path d="m9 5 7 7-7 7"/>,
+  "chevron-down": <path d="m6 9 6 6 6-6"/>,
+  expand: <path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/>,
   back: <path d="m14.5 5-7 7 7 7"/>,
   check: <path d="m4 12 5 5L20 6"/>,
   ruler: <><path d="m3 16 13-13 5 5L8 21zM13 6l2.5 2.5M10 9l2 2M7 12l2.5 2.5"/></>,

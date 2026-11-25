@@ -272,6 +272,14 @@ body:has(.landing-page) .site-header { padding-block-start: .35rem; }
 
 /* Home: two round buttons (3D / 2D) float in a dock pinned to the bottom-left of the screen. */
 .landing-page .explorer-heading { margin: 0; animation: none; } /* a transform here would trap the fixed dock */
+.explorer-heading .plan-intro { padding: .25rem 0 .85rem; }
+.explorer-heading .plan-intro h1 { margin: 0 0 .25rem; font-size: clamp(1.4rem, 2.5vw, 2rem); }
+.plan-intro p, .plan-resources p { color: var(--muted); line-height: 1.5; }
+.plan-resources { max-width: 74ch; margin-top: 2rem; }
+.plan-resources h2 { margin-bottom: .4rem; color: var(--ink); font-size: 1.3rem; }
+.plan-resources p + p { margin-top: .65rem; }
+.plan-resources ul { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; padding: 0; list-style: none; }
+.plan-resources a { color: var(--forest); text-underline-offset: .2em; }
 body:has(.landing-page) .site-footer { padding-block-end: 5.75rem; }
 .landing-page .explorer-actions {
   position: fixed; z-index: 7; inset-inline: 1.25rem auto; bottom: max(1rem, env(safe-area-inset-bottom));

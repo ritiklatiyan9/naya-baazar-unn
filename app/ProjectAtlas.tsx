@@ -1,11 +1,13 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { routes } from "../lib/site";
 import plan from "../src/plan-data.json";
 import PlanCanvas from "./PlanCanvas";
 import { MarketFacts } from "./MarketFacts";
-import { ProjectDetails, MediaView } from "./ProjectFeatures";
 import { Icon } from "./icons";
 import ShopManager, { type BookingStatus as Status, type ShopRecord as Availability } from "./ShopManager";
 
@@ -15,23 +17,22 @@ type Floor = "ground" | "first";
 type Inventory = Record<number, Availability>;
 type Unit = typeof plan[number];
 type User = { email: string };
-type View = "home" | "layout" | "model" | "details" | "walkthrough" | "gallery";
-const pages: { id: View; label: string; shortLabel: string; icon: string }[] = [
-  {id:"layout", label:"Floor plans", shortLabel:"Plans", icon:"plan"},
-  {id:"details", label:"Project details", shortLabel:"Project", icon:"shops"},
-  {id:"walkthrough", label:"Walkthrough", shortLabel:"Walkthrough", icon:"film"},
-  {id:"gallery", label:"Gallery", shortLabel:"Gallery", icon:"image"},
+const pages = [
+  { id: "layout", href: routes.plans, label: "Floor plans", shortLabel: "Plans", icon: "plan" },
+  { id: "details", href: routes.details, label: "Project details", shortLabel: "Project", icon: "shops" },
+  { id: "walkthrough", href: routes.walkthrough, label: "Walkthrough", shortLabel: "Walkthrough", icon: "film" },
+  { id: "gallery", href: routes.gallery, label: "Gallery", shortLabel: "Gallery", icon: "image" },
 ];
 const compactLayout = "(max-width: 800px)";
 const floorName = (floor: string) => floor === "ground" ? "Ground floor" : "First floor";
 const unitName = (id: number) => "Shop " + String(id).padStart(2, "0");
 const numberText = (feet: string) => feet.replaceAll("'", "′").replaceAll('"', "″");
 const statusLabel = (s?: Status) => s === "available" ? "Available" : s === "booked" ? "Booked" : "Unconfirmed";
-function Brand() {
-  return <a className="brand" href="#home" aria-label="Naya Baazar home" onClick={()=>window.scrollTo(0,0)}>
+function Brand({ onNavigate }: { onNavigate: () => void }) {
+  return <Link className="brand" href={routes.home} aria-label="Naya Baazar home" onNavigate={onNavigate}>
     <img src="/favicon.svg" alt="" width="44" height="44"/>
     <span><strong>Naya Baazar</strong><small>By Defence Garden</small></span>
-  </a>;
+  </Link>;
 }
 
 function useData() {
@@ -150,34 +151,49 @@ function ShopSheet({unit,record,admin,onClose,onManage}:{unit:Unit;record?:Avail
   </aside>;
 }
 
-function getView(): View {
-  const hash = window.location.hash.slice(1);
-  return hash.split("/")[0] === "model" ? "model" : pages.find(p=>p.id===hash)?.id || "home";
-}
-
-export default function ProjectAtlas() {
-  const [view,setView] = useState<View>("home");
+export default function ProjectAtlas({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [modelPath, setModelPath] = useState<string | null>(null);
   const [floor,setFloor] = useState<Floor>("ground");
   const [selected,setSelected] = useState<number|null>(null);
   const [managerOpen,setManagerOpen] = useState(false);
   const [notice,setNotice] = useState("");
   const {inventory,network,merge,refresh,user,changeUser,sessionReady} = useData();
-  const onHome = view === "home";
-  const inLayout = onHome || view === "layout" || view === "model"; // plan pages: round 3D/2D dock, shop details in a side sheet
+  const onHome = pathname === routes.home;
+  const inLayout = onHome || pathname === routes.plans;
+  const inModel = inLayout && modelPath === pathname;
+  const planViewHref = onHome ? routes.plans : "#layout";
+  const locateAfterNavigation = useRef(false);
   const sheetUnit = inLayout ? plan.find(u=>u.id===selected) : undefined;
   const statuses = useMemo(()=>Object.fromEntries(Object.values(inventory).map(r=>[r.id,r.status])) as Record<number,Status>,[inventory]);
-  useEffect(()=>{
-    let previous: View | null = null;
-    function route() {
-      const next = getView();
-      const switchingLayout = (next === "layout" || next === "model") && (previous === "layout" || previous === "model");
-      const changedPage = previous !== next;
-      previous = next;
-      setView(next);
-      if (!switchingLayout || (changedPage && window.matchMedia(compactLayout).matches)) window.scrollTo(0,0);
+  useEffect(() => {
+    let previousModel: boolean | undefined;
+    function syncFragment() {
+      const fragment = window.location.hash.slice(1);
+      const legacyPage = onHome && pages.find((page) => page.id === fragment);
+      if (legacyPage) {
+        router.replace(legacyPage.href);
+        return;
+      }
+      const showModel = inLayout && fragment.split("/")[0] === "model";
+      setModelPath(showModel ? pathname : null);
+      if (previousModel !== undefined && previousModel !== showModel && window.matchMedia(compactLayout).matches) {
+        window.scrollTo(0, 0);
+      }
+      previousModel = showModel;
     }
-    route();window.addEventListener("hashchange",route);return ()=>window.removeEventListener("hashchange",route);
-  },[]);
+    syncFragment();
+    window.addEventListener("hashchange", syncFragment);
+    return () => window.removeEventListener("hashchange", syncFragment);
+  }, [inLayout, onHome, pathname, router]);
+  const explorer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pathname === routes.plans && locateAfterNavigation.current) {
+      locateAfterNavigation.current = false;
+      explorer.current?.scrollIntoView({ block: "start" });
+    }
+  }, [pathname]);
   function changeFloor(next:Floor){if(next!==floor){setFloor(next);setSelected(null);}}
   function select(id:number) {
     const unit = plan.find(u=>u.id===id);
@@ -199,8 +215,12 @@ export default function ProjectAtlas() {
   function locateShop(id: number) {
     setManagerOpen(false);
     select(id);
-    if (onHome || !inLayout) window.location.hash = "layout";
-    window.requestAnimationFrame(() => document.querySelector(".explorer-grid")?.scrollIntoView({block:"start"}));
+    if (!inLayout || (onHome && !inModel)) {
+      locateAfterNavigation.current = true;
+      router.push(routes.plans, { scroll: false });
+      return;
+    }
+    window.requestAnimationFrame(() => explorer.current?.scrollIntoView({ block: "start" }));
   }
   async function logout(){
     try{const response=await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});if(!response.ok)throw new Error();changeUser(null);setManagerOpen(false);setNotice("Signed out.");}
@@ -211,14 +231,14 @@ export default function ProjectAtlas() {
     <header className="site-header">
       <div className="header-frame">
         <div className="header-inner">
-          <Brand/>
+          <Brand onNavigate={() => { setModelPath(null); window.scrollTo(0, 0); }}/>
           <nav className="main-nav" aria-label="Project navigation">
-            {pages.map(page => <a key={page.id} href={"#" + page.id} aria-label={page.label}
-              aria-current={view === page.id || (inLayout && page.id === "layout") ? "page" : undefined}>
+            {pages.map(page => <Link key={page.id} href={page.href} prefetch={false} aria-label={page.label}
+              aria-current={pathname === page.href || (inLayout && page.href === routes.plans) ? "page" : undefined}>
               <span className="mobile-nav-icon"><Icon name={page.icon} size={19}/></span>
               <span className="desktop-nav-label">{page.label}</span>
               <span className="mobile-nav-label">{page.shortLabel}</span>
-            </a>)}
+            </Link>)}
           </nav>
           <div className="header-actions">
             <button type="button" className="header-manage" onClick={openManagement} aria-haspopup="dialog" title="Manage shops">
@@ -236,25 +256,32 @@ export default function ProjectAtlas() {
       <div className={inLayout ? "page-wrap landing-page" + (sheetUnit ? " sheet-open" : "") : "page-wrap"}>
       {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss message" onClick={()=>setNotice("")}><Icon name="close" size={16}/></button></div>}
       {inLayout && <section className="layout-view" aria-labelledby="layout-heading"><div className="section-heading explorer-heading">
-        <h1 id="layout-heading" className="sr">{view === "model" ? "Architectural model" : "Floor plan explorer"}</h1>
+        <div className="plan-intro">
+          <h1 id="layout-heading">{onHome ? "Naya Baazar" : "Naya Baazar floor plans"}</h1>
+          <p>{onHome
+            ? "An open-air market by Defence Garden in Unn, Shamli, Uttar Pradesh."
+            : `Explore ${plan.length} shops across the ground and first floors. Select a shop to see its dimensions and availability.`}</p>
+        </div>
         <div className="explorer-actions">
-          <a className="model-launch" href="#model" aria-current={view==="model"?"page":undefined} aria-label="Explore 3D model" title="Explore 3D model">3D</a>
+          <a className="model-launch" href="#model" aria-current={inModel ? "true" : undefined} aria-label="Explore 3D model" title="Explore 3D model">3D</a>
           <nav className="mode-switch" aria-label="Layout view">
-            <a href="#layout" aria-current={view!=="model"?"page":undefined} aria-label="2D plan" title="2D plan">2D</a>
+            <Link href={planViewHref} prefetch={false} aria-current={!inModel ? "true" : undefined} aria-label="2D plan" title="2D plan" onNavigate={() => {
+              setModelPath(null);
+              if (inModel && window.matchMedia(compactLayout).matches) window.scrollTo(0, 0);
+            }}>2D</Link>
           </nav>
         </div>
       </div>
         {network==="error" && Object.keys(inventory).length>0 && <div className="offline" role="status"><Icon name="info"/><span>Availability could not refresh. Showing the last received update.</span><button onClick={()=>void refresh()}>Retry</button></div>}
-        <div className="explorer-grid">
-          {view === "model"
+        <div className="explorer-grid" ref={explorer}>
+          {inModel
             ? <Suspense fallback={<div className="model-loading" role="status">Loading 3D model…</div>}>
-                <ThreePlan onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
+                <ThreePlan planHref={planViewHref} onClearSelection={()=>setSelected(null)} floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>
               </Suspense>
             : <PlanCanvas floor={floor} onFloor={changeFloor} statuses={statuses} selected={selected} onSelect={select}/>}
         </div>
       </section>}
-      {view==="details" && <ProjectDetails/>}
-      {(view==="gallery" || view==="walkthrough") && <MediaView view={view}/>}
+      {children}
       </div>
       {onHome && <MarketFacts shopCount={plan.length}/>}
       {sheetUnit && <ShopSheet unit={sheetUnit} record={inventory[sheetUnit.id]} admin={!!user} onClose={()=>setSelected(null)} onManage={openManagement}/>}

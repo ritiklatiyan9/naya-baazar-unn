@@ -46,7 +46,7 @@
 }
 .development-cta:hover { background-color: transparent; color: var(--feature-ink); }
 .development-image { margin: 0; }
-.development-image img { display: block; width: 100%; aspect-ratio: 5 / 3.4; object-fit: cover; }
+.development-image img { display: block; width: 100%; height: auto; aspect-ratio: 5 / 3.4; object-fit: cover; }
 .development-image figcaption, .feature-media .nb-tour-meta, .feature-media .nb-gallery-film figcaption { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin: .75rem 0 0; font-size: .875rem; color: var(--feature-muted); }
 .development-image figcaption { color: var(--feature-ink); }
 .development-image figcaption span { color: var(--feature-muted); }

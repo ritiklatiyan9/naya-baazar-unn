@@ -1,39 +1,39 @@
 dialog.login-dialog,
 dialog.manager-dialog,
 .manager-dialog .manager-content {
-  color: var(--ink, #251f1b);
-  background: var(--surface, #fffdf9);
+  color: var(--ink, #25342a);
+  background: var(--surface, #fffdf5);
 }
 
 dialog.login-dialog {
-  border: 1px solid var(--line, #ded6ca);
+  border: 1px solid var(--line, #d9d6c4);
   border-radius: 1.25rem;
 }
 
-.manager-dialog .manager-heading { border-color: var(--line, #ded6ca); }
+.manager-dialog .manager-heading { border-color: var(--line, #d9d6c4); }
 
 .manager-dialog .manager-input > span,
 .login-dialog .dialog-body input {
-  border: 1px solid var(--line, #ded6ca);
+  border: 1px solid var(--line, #d9d6c4);
   border-radius: .65rem;
-  background: var(--paper, #f5f2ed);
+  background: var(--paper, #f4eedf);
 }
 
 .manager-dialog .booking-option { border-radius: .65rem; }
-.manager-dialog .booking-option:has(:focus-visible) { outline: 2px solid var(--accent, #775638); outline-offset: 2px; }
+.manager-dialog .booking-option:has(:focus-visible) { outline: 2px solid var(--accent, #3e653d); outline-offset: 2px; }
 
 .manager-dialog .booking-save,
 .login-dialog .primary-button {
-  border-radius: 2rem;
-  background: var(--ink, #251f1b);
+  border-radius: .25rem;
+  background: var(--ink, #25342a);
   color: #fffdf5;
 }
 
 .manager-dialog .booking-save:hover:enabled,
-.login-dialog .primary-button:hover:enabled { background: #4d3c30; }
+.login-dialog .primary-button:hover:enabled { background: var(--accent); }
 
 dialog.login-dialog::backdrop,
-dialog.manager-dialog::backdrop { background: rgb(35 27 22 / 60%); }
+dialog.manager-dialog::backdrop { background: rgb(23 32 24 / 60%); }
 
 @media (prefers-reduced-motion: no-preference) {
   dialog.login-dialog[open],
@@ -57,8 +57,8 @@ dialog.manager-dialog::backdrop { background: rgb(35 27 22 / 60%); }
     overscroll-behavior: contain;
     border: 0;
     border-radius: 1.25rem 1.25rem 0 0;
-    background: var(--surface, #fffdf9);
-    box-shadow: 0 -10px 45px #30291e25;
+    background: var(--surface, #fffdf5);
+    box-shadow: 0 -10px 45px #1d2b2325;
     scroll-padding-block: 16px;
   }
 

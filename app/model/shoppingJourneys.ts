@@ -1,8 +1,7 @@
 import * as T from "three";
 import type { Floor } from "./geometry";
-import { displayDepth, glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
+import { contains, displayDepth, doorStation, glassSetback, roomOutline, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
 import type { PersonPose } from "./shoppers";
-import { wingBoundaries, type Boundary } from "./wings";
 
 type Stop = {
   bay: RetailBay;
@@ -34,7 +33,7 @@ export type ShoppingJourney = {
 
 export function hasDisplayAisle(arcade: RetailBay) {
   const bay = arcade.shop ?? arcade;
-  if (bay.width < 2.65) return false;
+  if (bay.width < 2.65 || arcade.depth < 2.6) return false;
   const middle = bay.at(0, 0);
   const incoming = middle.clone().sub(bay.at(-1, 0)).normalize();
   const outgoing = bay.at(1, 0).sub(middle).normalize();
@@ -49,28 +48,21 @@ function shopStop(arcade: RetailBay, along: number, inset: number, lane: number)
   const normal = bay.at(display, inset + 1.6).sub(bay.at(display, inset + 1));
   // The displays stand against the rear wall, further in where the room is deeper.
   const rear = inset + arcade.depth - displayDepth;
-  // Keep the approach perpendicular to the glass until clear of the inward-opening leaf.
+  // Keep the approach perpendicular to the glass until clear of the inward-opening leaf, and in a deep room
+  // walk straight up the entry aisle, past the tables, before turning along the rear displays.
+  const aisle = rear + 1.1 > inset + 1.3 ? [bay.at(center, rear + 1.1)] : [];
   const thresholdPath = [
-    bay.at(display, rear + 1.13), bay.at((display + center) / 2, rear + 1.05),
+    bay.at(display, rear + 1.13), bay.at((display + center) / 2, rear + 1.08), ...aisle,
     bay.at(center, inset + .76), bay.at(center, inset + .30), door,
     bay.at(center, (lane + inset) / 2), bay.at(center, lane),
   ];
-  return { bay: arcade, doorAlong: along + (arcade.shop?.galleryAt(center) ?? center), door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
+  return { bay: arcade, doorAlong: along + doorStation(arcade), door, thresholdPath, displayHeading: Math.atan2(normal.x, normal.y) };
 }
 
-// Where two façades converge at a pavilion tip, a long bay may project onto both.
-// Only place a display visitor if there is room behind the whole door approach.
-function hasClearInterior(wing: Boundary, stop: Stop, inset: number) {
-  function clear(point: T.Vector2, depth: number) {
-    return wing.points.every((a, i) => {
-      if (!wing.publicEdge[i]) return true;
-      const b = wing.points[(i + 1) % wing.points.length];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const u = T.MathUtils.clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy), 0, 1);
-      return (point.x - a.x - u * dx) ** 2 + (point.y - a.y - u * dy) ** 2 >= (depth - .20) ** 2;
-    });
-  }
-  return clear(stop.thresholdPath[0], inset + stop.bay.depth - displayDepth + 1.13) && clear(stop.thresholdPath[2], inset + .76);
+// Only place a display visitor where the whole walk in from the door stays inside the room.
+function hasClearInterior(stop: Stop) {
+  const outline = roomOutline(stop.bay);
+  return stop.thresholdPath.slice(0, stop.thresholdPath.indexOf(stop.door) - 1).every(p => contains(p, outline));
 }
 
 const speedRamp = .55;
@@ -101,7 +93,7 @@ export function wingJourneys(bays: RetailBay[], floor: Floor, occupied: Set<numb
   for (const bay of bays) {
     if (hasDisplayAisle(bay) && !occupied.has(bay.id)) {
       const stop = shopStop(bay, edge + bay.width / 2, glassSetback[floor], lane);
-      if (hasClearInterior(wingBoundaries[wingIndex], stop, glassSetback[floor])) stops.push(stop);
+      if (hasClearInterior(stop)) stops.push(stop);
     }
     edge += bay.width;
   }

@@ -25,16 +25,16 @@ const shots: Shot[] = [
   { time: 17, eye: plan(318, 736), look: plan(309, 663, 1.98) },
   { time: 21, eye: plan(315, 694), look: plan(264, 634, 1.87), chapter: "Left arcade" },
   { time: 25, eye: plan(291, 665), look: plan(251, 612, 1.82) },
-  { time: 29, eye: plan(268, 642), look: plan(279, 620, 1.83), chapter: "Thread clothing atelier" },
-  // Shop 102. Approach on the centreline of its recessed door, then turn along
-  // the shallow display aisle to see the clothing rail from inside the shop.
-  { time: 31, eye: plan(267, 639.5), look: plan(284, 616, 1.68) },
-  { time: 34, eye: plan(281.81, 621.13), look: plan(278, 601, 1.48) },
-  { time: 36, eye: plan(282.85, 619.85), look: plan(271, 593, 1.50) },
-  { time: 38, eye: plan(283.33, 619.24), look: plan(267, 592, 1.46) },
-  { time: 40, eye: plan(286.2, 615.7), look: plan(277.61, 602.11, 1.38) },
-  { time: 42, eye: plan(286.2, 615.7), look: plan(280.0, 599.75, 1.57) },
-  { time: 44, eye: plan(281.81, 621.13), look: plan(281.45, 598.17, 1.82) },
+  { time: 29, eye: plan(268, 642), look: plan(283, 611, 1.83), chapter: "Thread clothing atelier" },
+  // Shop 102. Approach on the centreline of its door, walk up the entry aisle between the wall rail
+  // and the free-standing rail, and turn to the rear wall and the counter from inside the shop.
+  { time: 31, eye: plan(268.48, 629.6), look: plan(295.2, 596.4, 1.68) },
+  { time: 34, eye: plan(279.67, 615.72), look: plan(295.2, 596.4, 1.48) },
+  { time: 36, eye: plan(284.86, 609.29), look: plan(297, 605, 1.50) },
+  { time: 38, eye: plan(288.68, 604.55), look: plan(300.5, 598.5, 1.46) },
+  { time: 40, eye: plan(291.4, 601.2), look: plan(299, 584.5, 1.38) },
+  { time: 42, eye: plan(291.4, 601.2), look: plan(296.5, 578.5, 1.57) },
+  { time: 44, eye: plan(281.0, 614.1), look: plan(295.2, 596.4, 1.82) },
   { time: 46, eye: plan(267, 639.5), look: plan(241, 609, 1.85) },
   { time: 49, eye: plan(226, 602), look: plan(217, 564, 1.91), chapter: "Behind the west pavilion" },
   { time: 52, eye: plan(213, 582), look: plan(247, 531, 1.89) },

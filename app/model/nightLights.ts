@@ -5,7 +5,7 @@ import { sheetPoint, type Floor, type Unit } from "./geometry";
 import { eastFacadeAt, entranceLength, entranceOrigin, entrancePoint, entranceSign, entranceYaw, fountainWallFace as face } from "./entranceLayout";
 import { entranceFountainFootprints } from "./entranceFountain";
 import { entrancePalmTrunks } from "./entrancePalms";
-import { glassSetback, retailBays, shopEntrance } from "./retailFrontages";
+import { doorStation, glassSetback, retailBays } from "./retailFrontages";
 import { shellBoundaries, wingBoundaries } from "./wings";
 
 /**
@@ -236,8 +236,7 @@ export function addShopLanterns(group: T.Group, units: Unit[], floor: Floor, sof
     * (1 - T.MathUtils.smoothstep(r, .55 * poolRadius, poolRadius));
   const matrix = new T.Matrix4(), turn = new T.Quaternion(), up = new T.Vector3(0, 1, 0), one = new T.Vector3(1, 1, 1);
   bays.forEach((arcade, index) => {
-    const bay = arcade.shop ?? arcade, door = shopEntrance(bay.width).center;
-    const station = arcade.shop ? arcade.shop.galleryAt(door) : door;
+    const station = doorStation(arcade);
     const at = (along: number, depth: number) => arcade.at(station + along, depth);
     const p = at(0, reach), tangent = at(.2, reach).sub(at(-.2, reach));
     matrix.compose(new T.Vector3(p.x, glassY, p.y), turn.setFromAxisAngle(up, -Math.atan2(tangent.y, tangent.x)), one);

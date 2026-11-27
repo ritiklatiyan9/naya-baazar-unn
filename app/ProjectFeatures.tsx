@@ -9,7 +9,7 @@ export function ProjectDetails() {
       <div className="development-story">
         <h1 id="development-title">The Naya Baazar <span>project</span></h1>
         <p className="development-intro">Naya Baazar is an open-air market in Unn, Shamli, Uttar Pradesh. Two levels of shops look onto a landscaped plaza. Covered walkways wrap around the shopfronts, while an internal driveway connects the market to the street.</p>
-        <Link className="development-cta" href={routes.plans}><Icon name="plan" size={17}/>Explore floor plans</Link>
+        <Link className="development-cta" href={routes.plans}><Icon name="plan" size={17}/>Explore Map Layout</Link>
       </div>
       <figure className="development-image">
         <img src="/media/render-12.webp" srcSet="/media/render-12-small.webp 640w, /media/render-12.webp 1574w" sizes="(max-width: 48rem) 100vw, 60vw" width="1574" height="999" fetchPriority="high" alt="A compass mosaic at the centre of Naya Baazar’s tree-lined plaza, framed by two levels of shopfronts"/>

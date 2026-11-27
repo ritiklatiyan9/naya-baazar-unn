@@ -101,9 +101,10 @@ export function createTraffic(parent: T.Group,groundUnits:Unit[]) {
   const shadowMaterial=new T.MeshBasicMaterial({map:contactTexture(),transparent:true,depthWrite:false});
   const deliveries=stockDeliveries(parent,groundUnits,shadowMaterial,trafficPeriod);
   const vehicles=[
-    {drive:driveCycle(lane,first,-5,15,2.11),place:car(parent,"#a15e4d",false,shadowMaterial)},
-    {drive:driveCycle(lane,second,9,20,2.17),place:car(parent,"#d3c9ae",true,shadowMaterial)},
-    {drive:driveCycle(lane,.16,0),place:car(parent,"#547674",false,shadowMaterial)},
+    // Common Indian showroom colours: fire-red and silver hatchbacks, a pearl-white SUV.
+    {drive:driveCycle(lane,first,-5,15,2.11),place:car(parent,"#8e1c1e",false,shadowMaterial)},
+    {drive:driveCycle(lane,second,9,20,2.17),place:car(parent,"#e8e8e3",true,shadowMaterial)},
+    {drive:driveCycle(lane,.16,0),place:car(parent,"#8b8f92",false,shadowMaterial)},
     {drive:driveCycle(lane,.05,0),place:riddenBike(parent,false,shadowMaterial)},
     {drive:driveCycle(lane,.93,0),place:riddenBike(parent,true,shadowMaterial)},
   ];

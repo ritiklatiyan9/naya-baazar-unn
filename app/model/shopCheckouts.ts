@@ -64,7 +64,8 @@ function floorStations(units: Unit[], floor: Floor) {
   for (const arcade of bays) {
     if (arcade.id !== featured[floor] && arcade.id % 9 !== 2) continue;
     const bay = arcade.shop ?? arcade;
-    if (bay.width < 3.18) continue;
+    // A desk, its clerk and the aisle in front need a room at least 3.2 m deep.
+    if (bay.width < 3.18 || arcade.depth < 3.2) continue;
     for (let i = displayCount(bay.width) - 1; i >= 0; i--) {
       const desk = station(arcade, floor, i), poly = desk.footprint(.10);
       const bounds = new T.Box2().setFromPoints(poly);

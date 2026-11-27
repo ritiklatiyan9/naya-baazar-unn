@@ -1,6 +1,6 @@
 import * as T from "three";
 import { sheetPoint, type Floor, type Unit } from "./geometry";
-import { displayDepth, glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
+import { displayDepth, doorStation, glassSetback, retailBays, shopFloorHeight } from "./retailFrontages";
 import { wingBoundaries } from "./wings";
 import { shopCheckout } from "./shopCheckouts";
 import { shopperPortraits } from "./shopperAppearance";
@@ -48,7 +48,7 @@ function floorRoutes(units: Unit[], floor: Floor, serviceShopIds: number[] = [])
     let edge = initial;
     const receivingDoors: number[] = [];
     for (const bay of bays) {
-      if (serviceShopIds.includes(bay.id)) receivingDoors.push(edge + bay.width / 2 + shopEntrance(bay.width).center);
+      if (serviceShopIds.includes(bay.id)) receivingDoors.push(edge + bay.width / 2 + doorStation(bay));
       edge += bay.width;
     }
     for (let i = 0; i < sections; i++) {
@@ -61,8 +61,9 @@ function floorRoutes(units: Unit[], floor: Floor, serviceShopIds: number[] = [])
         else start = receivingDoor + 1.25;
       }
       if (end - start < 1.8) continue;
-      // Leave the inner lane next to the windows free for shoppers changing shops.
-      const inset = floor === "first" ? .78 : .84;
+      // Walk the middle of the 2.4 m gallery, clear of the piers, leaving the inner lane next to the windows
+      // free for shoppers changing shops.
+      const inset = glassSetback[floor] * .46;
       const count = Math.ceil((end - start) / .70);
       const points = Array.from({ length: count + 1 }, (_, n) => first.at(start + (end - start) * n / count, inset));
       const middle = (start + end) / 2;

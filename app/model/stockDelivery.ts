@@ -1,6 +1,6 @@
 import * as T from "three";
 import { sheetPoint, type Unit } from "./geometry";
-import { retailBays, displayDepth, glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
+import { retailBays, glassSetback, shopEntrance, shopFloorHeight, type RetailBay } from "./retailFrontages";
 import { wingBoundaries } from "./wings";
 import { deliveryPickup, stockContainer, type DeliveryBody } from "./marketVehicles";
 import { assemble, box, part } from "./vehicleGeometry";
@@ -11,25 +11,27 @@ const ease = (t:number) => T.MathUtils.smootherstep(t,0,1);
 const angle = (a:number,b:number,t:number) => a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*ease(t);
 
 /** Each crew moves the same cartons from its truck, through its shop door, onto its shelves. */
-function deliveryCrew(parent:T.Group, bay:RetailBay, body:DeliveryBody, startOffset:number, shadowMaterial:T.Material, trafficPeriod:number) {
-  const serviceShopId=bay.id, jamb=shopEntrance(bay.width).center, glass=glassSetback.ground;
+function deliveryCrew(parent:T.Group, arcade:RetailBay, body:DeliveryBody, startOffset:number, shadowMaterial:T.Material, trafficPeriod:number) {
+  const bay=arcade.shop ?? arcade, serviceShopId=arcade.id, jamb=shopEntrance(bay.width).center, glass=glassSetback.ground;
   const door=v3(bay.at(jamb,glass),shopFloorHeight.ground);
   const {group:pickup,closeCargo,wheels}=deliveryPickup(parent,shadowMaterial,body);
   const parkedHeading=Math.PI;
   // Leave the tail a short distance upstream so staff clear the tailgate before
   // turning towards the entrance with the crate in both hands.
-  const berth=new T.Vector3(sheetPoint(866.9,0).x,.033,door.z-3.78);
+  // ponytail: the walkthrough's delivery cues were timed on the original 1.72 m arcade, whose 3.8 m display rooms were
+  // entered at the middle of the whole bay. Trucks keep that berth, the receiving shelves stay where they stood (now
+  // just inside the deeper room) and crews keep that pace, so every trip keeps its cue.
+  const legacyDoor=shopEntrance(arcade.width).center-(arcade.shop ? arcade.shop.galleryAt(0) : 0), receiving=1.72+1.43+1.23;
+  const berth=new T.Vector3(sheetPoint(866.9,0).x,.033,bay.at(legacyDoor,glass).y-3.78);
   const tail=berth.clone().add(new T.Vector3(.03,0,2.53));
-  // The receiving shelves stand against the rear wall, further in where the room is deeper.
-  const deeper=bay.depth-displayDepth;
-  const destination=v3(bay.at(jamb,glass+deeper+1.23),shopFloorHeight.ground);
-  const path=new T.CatmullRomCurve3([
+  const route=(station:number,shopfront:number,shelves:number)=>new T.CatmullRomCurve3([
     tail, tail.clone().add(new T.Vector3(.25,0,.36)),
-    v3(bay.at(jamb-.29,-.22),.111), v3(bay.at(jamb-.06,.28),shopFloorHeight.ground),
-    door, destination,
+    v3(bay.at(station-.29,-.22),.111), v3(bay.at(station-.06,.28),shopFloorHeight.ground),
+    v3(bay.at(station,shopfront),shopFloorHeight.ground), v3(bay.at(station,shelves),shopFloorHeight.ground),
   ]);
-  // Crews cover the extra floor of a deeper room in the same time, so every trip keeps its cue in the walkthrough.
-  const length=path.getLength(), walkTime=(length-deeper)/1.06+.55;
+  const destination=v3(bay.at(jamb,receiving),shopFloorHeight.ground);
+  const path=route(jamb,glass,receiving), length=path.getLength();
+  const walkTime=(route(legacyDoor,1.72,receiving).getLength()-1.43)/1.06+.55;
   const tangent=new T.Vector3(), point=new T.Vector3();
   const endTangent=path.getTangent(1), homeHeading=Math.atan2(endTangent.x,endTangent.z);
   const firstTangent=path.getTangent(0), depart=Math.atan2(firstTangent.x,firstTangent.z);
@@ -45,13 +47,13 @@ function deliveryCrew(parent:T.Group, bay:RetailBay, body:DeliveryBody, startOff
     box(markings,"#d2ab66",x,.046,z-Math.sign(z)*.30,.075,.008,.66);
     box(markings,"#d2ab66",x-Math.sign(x)*.23,.046,z,.5,.008,.075);
   }
-  const stand=new T.Group(); stand.name="Loading bay · Shop "+bay.id;
+  const stand=new T.Group(); stand.name="Loading bay · Shop "+arcade.id;
   stand.position.set(berth.x,0,berth.z); parent.add(stand); assemble(stand,markings,{roughness:.98});
 
   const template=stockContainer(body), parcels:T.Group[]=[];
   const load:T.Vector3[]=[], shelf:T.Vector3[]=[];
   const cabinet=new T.Group();
-  cabinet.name="Shop "+bay.id+" · receiving shelves";
+  cabinet.name="Shop "+arcade.id+" · receiving shelves";
   parent.add(cabinet); cabinet.position.copy(destination); cabinet.rotation.y=homeHeading;
   const shelves:T.BufferGeometry[]=[];
   box(shelves,"#a78767",0,.56,.67,1.06,.07,.54);
@@ -66,7 +68,7 @@ function deliveryCrew(parent:T.Group, bay:RetailBay, body:DeliveryBody, startOff
   assemble(shutter,slats,{roughness:.76});
   for(let i=0;i<4;i++){
     const carton=i===0?template:template.clone();
-    carton.name="Shop "+bay.id+" · load "+(i+1); parent.add(carton); parcels.push(carton);
+    carton.name="Shop "+arcade.id+" · load "+(i+1); parent.add(carton); parcels.push(carton);
     load.push(new T.Vector3(0,.917,-1.67+i*.46));
     const p=new T.Vector3((i%2-.5)*.49,i<2?.747:1.122,.665);
     shelf.push(cabinet.localToWorld(p));

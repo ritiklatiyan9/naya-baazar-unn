@@ -2,6 +2,7 @@ import * as T from "three";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { boardOutline, entranceLength, entranceOrigin, entrancePoint, entranceYaw } from "./entranceLayout";
 import { finished } from "./realism";
+import { addSkyLife } from "./skyLife";
 
 /**
  * The countryside around the market: farmland and village houses out to a hazy horizon,
@@ -478,6 +479,7 @@ export function addSurroundings(scene: T.Scene, quality: { trees: number }) {
   group.add(farmLeaves);
   addVillages(group, villages);
   addMainRoad(group);
+  const skyLife = addSkyLife(group);
   scene.add(group);
-  return { group, setTime(seconds: number) { wind.value = seconds; } };
+  return { group, setTime(seconds: number) { wind.value = seconds; skyLife.setTime(seconds); } };
 }

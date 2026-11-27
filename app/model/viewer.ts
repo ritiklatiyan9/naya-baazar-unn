@@ -15,7 +15,7 @@ import { shopCheckout } from "./shopCheckouts";
 import { entranceLength, entrancePoint, entranceSign, fountainWallFace } from "./entranceLayout";
 import { entranceFountainFootprints } from "./entranceFountain";
 import { entrancePalmTrunks } from "./entrancePalms";
-import { displayDepth, glassSetback, retailBays, shopFloorHeight, shopEntrance } from "./retailFrontages";
+import { displayDepth, doorStation, glassSetback, retailBays, roomFixtures, shopFloorHeight, shopEntrance } from "./retailFrontages";
 import {
   disposeScene,
   levelHeight,
@@ -396,8 +396,7 @@ export async function createViewer(host: HTMLDivElement, signal: AbortSignal, op
       const floor: Floor = upper ? "first" : "ground";
       const arcade = wingBoundaries.flatMap((wing) => retailBays(wing, upper ? firstUnits : groundUnits, floor)).find((bay) => bay.id === id);
       if (!arcade) return null;
-      const door = shopEntrance((arcade.shop ?? arcade).width).center;
-      const station = arcade.shop ? arcade.shop.galleryAt(door) : door;
+      const station = doorStation(arcade);
       // In front of the shop's door and in line with the arcade piers, stepping aside where one stands there.
       const spot = (aside: number) => arcade.at(station + aside, shopViewInset);
       const piers = (upper ? first : ground).piers;
@@ -825,7 +824,7 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
     polygon(boundary);
   }
   const glass = glassSetback[floor];
-  const checkouts: T.Vector2[][] = [];
+  const checkouts: T.Vector2[][] = [], fixtures: T.Vector2[][] = [];
   for (const wing of wingBoundaries) {
     c.fillStyle = "black";
     polygon(wing.points);
@@ -847,25 +846,20 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
         polygon(front.concat(back.reverse()));
       }
       // A small overlap joins neighbouring bays even on tight rail curves.
-      const laneEnd = arcade.shop ? glass - .34 : glass - .20;
-      band(-arcade.width / 2 - 0.06, arcade.width / 2 + 0.06, floor === "first" ? 0.25 : -0.26, laneEnd, arcade);
-      if (arcade.shop) band(-half, half, glass - .34, glass - .18);
+      band(-arcade.width / 2 - 0.06, arcade.width / 2 + 0.06, floor === "first" ? 0.25 : -0.26, glass - .20, arcade);
       band(doorway.center - doorway.halfWidth + 0.13, doorway.center + doorway.halfWidth - 0.13,
         glass - 0.36, glass + 0.46);
       // The clear floor in front of the displays grows with the depth of the room.
       band(-half + 0.22, half - 0.22, glass + 0.24, glass + 1.42 + arcade.depth - displayDepth);
+      // Wall displays and display tables stand on that floor.
+      for (const { along, depth } of roomFixtures(bay.width, arcade.depth))
+        fixtures.push([bay.at(along[0] - .15, glass + depth[0] - .15), bay.at(along[1] + .15, glass + depth[0] - .15),
+          bay.at(along[1] + .15, glass + depth[1] + .15), bay.at(along[0] - .15, glass + depth[1] + .15)]);
       // Trace the approach from the arcade to the glass and then straight into the room.
-      // At a fitted corner the approach changes direction at the recessed doorway.
       const outside = bay.at(doorway.center, glass - 0.58);
       const inside = bay.at(doorway.center, glass + 1.1);
       c.beginPath();
       c.moveTo(outside.x, outside.y);
-      if (arcade.shop) {
-        for (const d of [glass - .34, glass - .18]) {
-          const p = bay.at(doorway.center, d);
-          c.lineTo(p.x,p.y);
-        }
-      }
       c.lineTo(inside.x, inside.y);
       c.lineJoin = "round";
       c.strokeStyle = "white";
@@ -903,7 +897,7 @@ function walkableFloor(bounds: T.Box2, boundary: T.Vector2[], floor: Floor, unit
     }
   }
   c.fillStyle = "black";
-  for (const footprint of checkouts) polygon(footprint);
+  for (const footprint of checkouts.concat(fixtures)) polygon(footprint);
   const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
   const width = canvas.width, height = canvas.height;
   return (x: number, z: number) => {

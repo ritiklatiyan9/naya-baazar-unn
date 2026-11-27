@@ -3,7 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Floor, Unit } from "./geometry";
 import { checkoutDepth, checkoutTop, shopCheckout } from "./shopCheckouts";
 import { cafeShopIds } from "./marketPlaces";
-import { displayCount, displayDepth, shelfWidth, glassSetback, retailBays, shopEntrance, shopFloorHeight } from "./retailFrontages";
+import { behindGlass, contains, displayCount, displayDepth, glassSetback, retailBays, roomFixtures, roomOutline, shelfWidth, shopEntrance, shopFloorHeight } from "./retailFrontages";
 import { facadeFinish } from "./siteMaterials";
 import { shellBoundaries, wingBoundaries } from "./wings";
 import { floristBloom, floristLeaf, hangingShirt } from "./merchandiseGeometry";
@@ -87,7 +87,7 @@ class Faces {
 // Revolve the inner lip as well as the outside so vessels still read as hollow
 // from the eye-level walkthrough, especially on the lower shelves.
 function thrownPot(profile: number[][]) {
-  const geometry = new T.LatheGeometry(profile.map(([r,h]) => new T.Vector2(r, h - .5)), 18);
+  const geometry = new T.LatheGeometry(profile.map(([r,h]) => new T.Vector2(r, h - .5)), 14);
   const positions = geometry.getAttribute("position");
   const colors = new Float32Array(positions.count * 3);
   for (let i = 0; i < positions.count; i++) {
@@ -451,11 +451,105 @@ function addPhotoWall(panels:Faces,group:T.Group,onReady?:()=>void) {
   if(!atlas.ready)atlas.panels.add(panel);
 }
 
+/** A free-standing display in the middle of a deep room, dressed for the shop's trade. x runs across the room, z along it. */
+function floorDisplay(place: Arrangement, theme: number, width: number, length: number, variation: number) {
+  const timber = "#7b5d45", top = "#b8956d", brass = "#b19a70";
+  const along = (i: number, count: number, span = length) => (i + .5 - count / 2) * span / count;
+  const table = (height: number, tint = top) => {
+    place("box", tint, 0, height - .022, 0, width, .044, length);
+    for (const x of [-1, 1]) for (const z of [-1, 1])
+      place("box", timber, x * (width / 2 - .06), (height - .044) / 2, z * (length / 2 - .06), .05, height - .044, .05);
+    return height;
+  };
+  switch (theme) {
+    case 0: { // A free-standing rail of shirts on hangers.
+      for (const z of [-1, 1]) {
+        place("box", brass, 0, .78, z * (length / 2 - .04), .035, 1.56, .035);
+        place("box", timber, 0, .03, z * (length / 2 - .04), .46, .06, .13);
+      }
+      place("box", brass, 0, 1.56, 0, .035, .035, length - .02);
+      const count = Math.max(3, Math.floor((length - .2) / .16));
+      for (let i = 0; i < count; i++) {
+        const z = along(i, count, length - .2);
+        place("cylinder", brass, 0, 1.51, z, .01, .1, .01);
+        place("shirt", cloth[(i + variation) % cloth.length], 0, 1.08, z, .6, 1.18, .9, (i % 3 - 1) * .22);
+      }
+      break;
+    }
+    case 1: { // Stacks of new titles, each topped by a face-up cover.
+      const y = table(.76), rows = Math.max(2, Math.floor(length / .32));
+      for (let r = 0; r < rows; r++) for (const x of [-.22, .22].map(v => v * width / .9)) {
+        const books = 2 + (r + variation + (x > 0 ? 1 : 0)) % 3;
+        for (let b = 0; b < books; b++)
+          place("box", spines[(r * 2 + b + variation) % spines.length], x, y + .016 + b * .032, along(r, rows), .17, .03, .24, (b % 2) * .06);
+      }
+      break;
+    }
+    case 2: { // A plinth of thrown vessels.
+      const y = table(.82, "#d8cbb2"), count = Math.max(3, Math.floor(length / .3));
+      for (let i = 0; i < count; i++) for (const x of [-.2, .2]) {
+        const tint = pottery[(i + variation + (x > 0 ? 2 : 0)) % pottery.length], z = along(i, count);
+        if ((i + (x > 0 ? 1 : 0) + variation) % 3 === 0) place("bowl", tint, x * width / .9, y + .065, z, .24, .13, .24);
+        else { const h = .22 + ((i + variation) % 3) * .07; place("vase", tint, x * width / .9, y + h / 2, z, .17, h, .17); }
+      }
+      break;
+    }
+    case 3: { // Roasted beans in bags beside a tasting tray of cups.
+      const y = table(.92, "#a98462"), count = Math.max(2, Math.floor(length / .36));
+      for (let i = 0; i < count; i++) {
+        place("box", i % 2 ? "#c9b48e" : "#7e5c43", -width * .22, y + .14, along(i, count), .13, .28, .09);
+        place("cylinder", "#ede5cf", width * .2, y + .045, along(i, count), .085, .09, .085);
+      }
+      break;
+    }
+    case 4: { // A two-tier plant stand of potted foliage and cut stems.
+      for (const [height, level] of [[.34, 0], [.72, 1]] as const) {
+        place("box", "#6e5843", 0, height, 0, width * (level ? .62 : 1), .045, length);
+        const count = Math.max(2, Math.floor(length / .34));
+        for (let i = 0; i < count; i++) {
+          const z = along(i, count), x = level ? 0 : (i % 2 ? -.22 : .22) * width / .9;
+          place("vase", pottery[(i + variation + level) % pottery.length], x, height + .15, z, .19, .27, .19);
+          for (const side of [-1, 1]) place("leaf", side > 0 ? "#779753" : "#527341", x + side * .05, height + .40, z, .10, .22, .11, i * .7, -side * .6);
+          if ((i + level) % 2 === 0) place("bloom", (i + variation) % 2 ? "#d29b88" : "#e3ca93", x, height + .52, z, .16, .14, .16, i * .9);
+        }
+      }
+      for (const x of [-1, 1]) for (const z of [-1, 1]) place("box", "#5d4a3a", x * (width / 2 - .05), .36, z * (length / 2 - .05), .04, .72, .04);
+      break;
+    }
+    case 5: { // A sofa and a low table set out as a living room.
+      const sofa = Math.min(length, 1.9);
+      place("box", "#b3a18c", -width * .18, .2, 0, .82, .26, sofa);
+      place("box", "#83978e", -width * .18, .42, 0, .8, .2, sofa - .2);
+      place("box", "#8fa095", -width * .18 - .33, .62, 0, .18, .55, sofa - .2);
+      for (const z of [-1, 1]) place("box", "#83948c", -width * .18, .5, z * (sofa / 2 - .08), .82, .38, .16);
+      place("box", "#a07d5c", width * .3, .4, 0, Math.min(.6, width * .4), .04, Math.min(.9, length * .5));
+      place("cylinder", "#6d5642", width * .3, .19, 0, .07, .38, .07);
+      place("bowl", "#a9b9ad", width * .3, .47, -.1, .2, .1, .2);
+      break;
+    }
+    case 6: { // A bread table piled with loaves and baskets.
+      const y = table(.84, "#c2a27c"), count = Math.max(2, Math.floor(length / .3));
+      for (let i = 0; i < count; i++) {
+        place("round", i % 2 ? "#cd8c48" : "#ad6d3f", -width * .18, y + .07, along(i, count), .21, .16, .3, .2);
+        place("bowl", "#c9a26e", width * .2, y + .06, along(i, count), .26, .12, .26);
+        place("round", "#d79a57", width * .2, y + .1, along(i, count), .12, .09, .14);
+      }
+      break;
+    }
+    default: { // Folded linens stacked in their colourways.
+      const y = table(.78), rows = Math.max(2, Math.floor(length / .4));
+      for (let r = 0; r < rows; r++) for (const x of [-.2, .2].map(v => v * width / .9))
+        for (let fold = 0; fold < 3; fold++)
+          place("box", cloth[(variation + r + fold + (x > 0 ? 2 : 0)) % cloth.length], x, y + .04 + fold * .075, along(r, rows), .3, .07, .34 - .02 * fold);
+    }
+  }
+}
+
 export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsReady?:()=>void) {
   const setback = glassSetback[floor], base = shopFloorHeight[floor];
   const ceiling = floor === "ground" ? 2.91 : 2.86;
   const glass = new Faces(), interior = new Faces(), signs = new Faces(), photos = new Faces();
-  const returns = new Faces(), doors:Door[]=[];
+  const piers = new Faces(), doors:Door[]=[];
   const fittings = new Fixtures();
   const darkMetal="#3f4948";
   function beam(a:Vec,b:Vec,y:number,width:number,height:number,color:string) {
@@ -488,8 +582,10 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       }
     }
   }
-  const bays = wingBoundaries.flatMap(wing => retailBays(wing,units,floor));
-  for(const arcade of bays) {
+  const arcades = wingBoundaries.flatMap(wing => retailBays(wing,units,floor).map(arcade => ({ wing, arcade })));
+  // Each room's outline tells glass that looks into a neighbour's room apart from a blank stretch of wall.
+  const outlines = arcades.map(({ arcade }) => roomOutline(arcade));
+  arcades.forEach(({ wing, arcade }, index) => {
     const bay = arcade.shop ?? arcade, id = arcade.id;
     let themeIndex = (id * 3 + Math.floor(id / 7)) % themes.length;
     if (floor === "ground" && id === cafeShopIds.coffee) themeIndex = 3;
@@ -502,17 +598,12 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     const post=(a:Vec,b:Vec,w:number,c:string) => {
       fittings.put("box",c,a.clone().lerp(b,.5),w,Math.abs(b.y-a.y),w);
     };
-    // The lit floor and continuous rear wall give a view right into each shop from the gallery.
-    const aisleDepth=arcade.depth, deeper=aisleDepth-displayDepth;
-    if (arcade.shop) {
-      // Exposed ends face a covered gallery. Finish the outside of the actual partitions.
-      const end = half + .025, rear = setback + aisleDepth + .025;
-      const perimeter = [[-end, setback], [-end, rear], [end, rear], [end, setback]];
-      for (let i = 1; i < perimeter.length; i++) {
-        const [a, da] = perimeter[i-1], [b, db] = perimeter[i];
-        returns.quad(point(a,0,da), point(b,0,db), point(b,ceiling,db), point(a,ceiling,da), facadeFinish.plaster);
-      }
-    }
+    const yawAt=(u:number,d:number)=>{
+      const a=point(u-.16,0,d), b=point(u+.16,0,d);
+      return -Math.atan2(b.z-a.z,b.x-a.x);
+    };
+    // The lit floor and continuous walls give a view right into each shop from the gallery.
+    const aisleDepth=arcade.depth, deeper=aisleDepth-displayDepth, through=!!arcade.through;
     const parts=Math.max(2,Math.ceil(bay.width/.92));
     for(let i=0;i<parts;i++) {
       const u=-half+bay.width*i/parts, v=-half+bay.width*(i+1)/parts;
@@ -520,11 +611,14 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
       const f1=point(u,.004,front), f2=point(v,.004,front);
       const b1=point(u,.004,back), b2=point(v,.004,back);
       interior.quad(f1,f2,b2,b1,"#c9bdae","#ac9a84");
-      interior.quad(b1,b2,point(v,ceiling,back),point(u,ceiling,back),theme.wall,"#e6d4b4");
+      // A room that runs through to the far arcade ends at that arcade's glass instead of a rear wall.
+      if(!through) interior.quad(b1,b2,point(v,ceiling,back),point(u,ceiling,back),theme.wall,"#e6d4b4");
       interior.quad(point(u,ceiling,back),point(v,ceiling,back),point(v,ceiling,front),point(u,ceiling,front),"#bda784","#d8c8aa");
     }
     const wallLeft=(u:number)=>{
-      const d=setback+aisleDepth;
+      const d=setback+aisleDepth, middle=bay.at(u,setback+aisleDepth/2);
+      // No partition where the room's side is itself the glass of another arcade.
+      if(!behindGlass(wing,middle,setback+.25))return;
       interior.quad(point(u,0,setback),point(u,0,d),point(u,ceiling,d),point(u,ceiling,setback),theme.accent,theme.wall);
     };
     wallLeft(-half+.005);
@@ -532,13 +626,15 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     const {center:doorCenter,halfWidth:doorHalf}=shopEntrance(bay.width);
     const l=doorCenter-doorHalf,r=doorCenter+doorHalf,doorH=2.13;
     const left=point(l,0,setback),right=point(r,0,setback);
-    function fixedPane(u:number,v:number,low:number,high:number,frames:boolean) {
+    function fixedPane(u:number,v:number,low:number,high:number,frames:boolean,at=point) {
       const n=Math.max(1,Math.ceil((v-u)/1.40));
       for(let i=0;i<n;i++){
         const x=u+(v-u)*i/n,z=u+(v-u)*(i+1)/n;
-        glass.quad(point(x,low,setback),point(z,low,setback),point(z,high,setback),point(x,high,setback),"#ffffff");
-        if(frames || i>0)post(point(x,low,setback),point(x,high,setback),.052,darkMetal);
-        if(low===0)beam(point(x,0,setback),point(z,0,setback),.045,.072,.08,darkMetal);
+        glass.quad(at(x,low,setback),at(z,low,setback),at(z,high,setback),at(x,high,setback),"#ffffff");
+        if(frames || i>0)post(at(x,low,setback),at(x,high,setback),.052,darkMetal);
+        if(low===0)beam(at(x,0,setback),at(z,0,setback),.045,.072,.08,darkMetal);
+        // A head rail closes the glass up to the gallery soffit.
+        if(high===ceiling)beam(at(x,0,setback),at(z,0,setback),ceiling+.02,.06,.08,darkMetal);
       }
     }
     fixedPane(-half,l,0,ceiling,true);
@@ -546,6 +642,31 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     fixedPane(l,r,doorH,ceiling,false);
     for(const u of [l,r])post(point(u,0,setback),point(u,ceiling,setback),.062,darkMetal);
     beam(left,right,doorH+.035,.085,.07,darkMetal);
+    if (arcade.shop) {
+      // The rest of the bay's frontage: more glass where it looks into a neighbour's room, otherwise a plastered pier wall.
+      const gallery=(u:number,y:number,d:number)=>{ const p=arcade.at(u,d); return new T.Vector3(p.x,base+y,p.y); };
+      const span=arcade.width/2;
+      for (const [from, to] of [[-span, arcade.shop.galleryAt(-half)], [arcade.shop.galleryAt(half), span]]) {
+        const count=Math.ceil((to-from)/.45);
+        let runStart=from, runGlass:boolean|undefined;
+        for (let i=0;i<=count;i++) {
+          const u=from+(to-from)*Math.min(i+.5,count)/count;
+          const p=arcade.at(u,setback+.2);
+          const looksIn=i<count && outlines.some((outline,k)=>k!==index && contains(p,outline));
+          const edge=from+(to-from)*i/count;
+          if (runGlass!==undefined && (i===count || looksIn!==runGlass)) {
+            if (runGlass) fixedPane(runStart,edge,0,ceiling,true,gallery);
+            else for (let k=0, n=Math.max(1,Math.ceil((edge-runStart)/.45)); k<n; k++) {
+              const x=runStart+(edge-runStart)*k/n, z=runStart+(edge-runStart)*(k+1)/n;
+              const a=gallery(x,0,setback), b=gallery(z,0,setback);
+              if (a.distanceTo(b) > .005) piers.quad(a,b,gallery(z,ceiling+.04,setback),gallery(x,ceiling+.04,setback),facadeFinish.plaster);
+            }
+            runStart=edge;
+          }
+          runGlass=looksIn;
+        }
+      }
+    }
     const inward=point(doorCenter,0,setback+.2).sub(point(doorCenter,0,setback)).setY(0).normalize();
     const opening=right.clone().sub(left);
     const angle=id%4===1?.53:id%6===0?.22:0;
@@ -570,8 +691,7 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
     for(let i=0;i<stalls;i++) {
       const span=bay.width/stalls;
       const u=-half+span*(i+.5);
-      const a=point(u-.16,0,setback), b=point(u+.16,0,setback);
-      const yaw=-Math.atan2(b.z-a.z,b.x-a.x);
+      const yaw=yawAt(u,setback);
       const arrange:Arrangement=(form,color,x,y,d,w,h,z,turn=0,lean=0,pitch=0)=>{
         fittings.put(form,color,point(u+x,y,setback+deeper+d),w,h,z,yaw+turn,lean,pitch);
       };
@@ -586,11 +706,13 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
         const inwardSign = Math.sign(inward.x * Math.sin(yaw) + inward.z * Math.cos(yaw));
         checkoutFixtures(desk, checkout.width, theme, themeIndex, inwardSign);
         const w = Math.min(1.27, checkout.width * .81), h = w / 7.1;
-        const left = point(centre - w / 2, 1.94, d), right = point(centre + w / 2, 1.94, d);
-        signs.quad(left, right, point(centre + w / 2, 1.94 + h, d), point(centre - w / 2, 1.94 + h, d),
-          "#ffffff", "#ffffff", tileUv(themeIndex, 1, themes.length, mirror));
+        if (!through) {
+          const left = point(centre - w / 2, 1.94, d), right = point(centre + w / 2, 1.94, d);
+          signs.quad(left, right, point(centre + w / 2, 1.94 + h, d), point(centre - w / 2, 1.94 + h, d),
+            "#ffffff", "#ffffff", tileUv(themeIndex, 1, themes.length, mirror));
+        }
       } else {
-        photos.quad(pl,pr,point(u+photoWidth/2,y1,d),point(u-photoWidth/2,y1,d),"#fff","#fff",tileUv(themeIndex,4,2,mirror));
+        if (!through) photos.quad(pl,pr,point(u+photoWidth/2,y1,d),point(u-photoWidth/2,y1,d),"#fff","#fff",tileUv(themeIndex,4,2,mirror));
         merchandise(arrange,themeIndex,span,id+i);
       }
       // Concealed warm light under the display header and the ceiling fixture read even in the covered arcade.
@@ -602,14 +724,48 @@ export function addRetail(group:T.Group, units:Unit[], floor:Floor, onMaterialsR
         arrange("lamp","#ffe4a9",span*.22,ceiling-.59,1.50,.18,.012,.16);
       }
     }
-  }
+    // A deep room carries displays down its side walls and a table or rail beside the entry aisle.
+    for (const [n, fixture] of roomFixtures(bay.width, aisleDepth).entries()) {
+      const [d0, d1] = fixture.depth, length = d1 - d0;
+      if (fixture.kind === "table") {
+        const cu = (fixture.along[0] + fixture.along[1]) / 2, cd = (d0 + d1) / 2, yaw = yawAt(cu, setback + cd);
+        floorDisplay((form, color, x, y, z, w, h, d, turn = 0, lean = 0, pitch = 0) =>
+          fittings.put(form, color, point(cu + x, y, setback + cd + z), w, h, d, yaw + turn, lean, pitch),
+          themeIndex, fixture.along[1] - fixture.along[0], length, id + n);
+        continue;
+      }
+      const wallU = fixture.side < 0 ? -half : half, stalls = Math.max(1, Math.round(length / 2.6)), span = length / stalls;
+      for (let k = 0; k < stalls; k++) {
+        // Laid out as for a rear wall, then turned so its length runs along the side wall. Measured in metres from
+        // the wall itself, since near a sharp corner the room's own frame is compressed.
+        const along = d0 + (k + .5) * span, wall = point(wallU, 0, setback + along);
+        const run = point(wallU, 0, setback + along + .5).sub(point(wallU, 0, setback + along - .5)).normalize();
+        const into = new T.Vector3(-run.z, 0, run.x);
+        if (into.dot(point(0, 0, setback + along).sub(wall)) < 0) into.negate();
+        const yaw = -Math.atan2(-fixture.side * run.z, -fixture.side * run.x);
+        merchandise((form, color, x, y, d, w, h, z, turn = 0, lean = 0, pitch = 0) =>
+          fittings.put(form, color, wall.clone().addScaledVector(into, 2.27 - d).addScaledVector(run, -x * fixture.side).setY(base + y), w, h, z, yaw + turn, lean, pitch),
+          themeIndex, span, id + k + 3);
+      }
+    }
+    // Ceiling lights run the length of a deep room.
+    for (let d = 1.1; d < aisleDepth - displayDepth + .3; d += 1.7) {
+      const width = Math.min(1.25, bay.width * .4);
+      fittings.put("box","#655749",point(0,ceiling-.055,setback+d),width,.085,.105,yawAt(0,setback+d));
+      fittings.put("lamp","#ffe1a5",point(0,ceiling-.104,setback+d),width-.03,.019,.075,yawAt(0,setback+d));
+    }
+  });
   const glow={value:0};
   const roomFinish:T.MeshStandardMaterialParameters={vertexColors:true,side:T.DoubleSide,roughness:.85,emissive:"#b09474",emissiveIntensity:.075};
   // Painted walls and ceilings over a polished tile floor.
   const rooms=interior.add(group,applyFinish(litAfterDark(new T.MeshStandardMaterial(roomFinish),glow),"paint",{floor:"tile",albedo:.7}));
   rooms.name="Shop interiors";
-  // The outside of an end shop's partitions faces the gallery, so it stays unlit at night.
-  if (returns.position.length) returns.add(group,applyFinish(new T.MeshStandardMaterial(roomFinish),"plaster")).name="Arcade wall returns";
+  // The plastered stretches of shopfront belong to the gallery, so they stay unlit at night.
+  if (piers.position.length) {
+    const wall=piers.add(group,applyFinish(new T.MeshStandardMaterial(roomFinish),"plaster"));
+    wall.name="Shopfront pier walls";
+    wall.castShadow=wall.receiveShadow=true;
+  }
   fittings.add(group,glow);
   const atlas=signAtlas();
   signs.add(group,new T.MeshBasicMaterial({map:atlas,color:atlas?"#fff7dd":"#514b40",side:T.DoubleSide})).name="Shop signs";

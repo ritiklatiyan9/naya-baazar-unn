@@ -10,7 +10,8 @@ export const pavilionStair = {
   right: right.x,
   centre: (left.x + right.x) / 2,
   galleryEdge: left.y,
-  entrance: left.y + 1.9,
+  // The stair hall opens on the shopfront line, 2.4 m behind the gallery edge (glassSetback in retailFrontages.ts).
+  entrance: left.y + 2.4,
   firstTread: left.y + 2.70,
   lastTread: left.y + 5.25,
   back: left.y + 6.50,

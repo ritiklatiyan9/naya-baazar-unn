@@ -3,33 +3,13 @@ import { castSunShadow } from "./realism";
 import { LoftGeometry } from "three/addons/geometries/LoftGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { assemble, box, lamps, oval, part, rod, vehicleFinish } from "./vehicleGeometry";
+import { assemble, box, lamps, oval, part, plate, profile, rod, slab, vehicleFinish, type Corner } from "./vehicleGeometry";
 
 type Parts = T.BufferGeometry[];
-/** Side-profile corner: [z, y, fillet radius, radius of the edge where it meets the flat sides]. */
-type Corner = [number, number, number?, number?];
 
 // Tyre radius (stockDelivery spins the wheels by it), axle stations and wheel planes.
 const R = .29, front = 1.2, rear = -1.24, track = .7;
 const steel = "#26292a", black = "#1c1d1e", alloy = "#c4c9c8", red = "#c22a28", white = "#f1efe9", tinted = "#283633";
-
-/** Dense closed polyline through filleted corners, each point carrying its corner's edge radius. */
-function profile(corners: Corner[], steps = 5) {
-  const out: number[][] = [], n = corners.length;
-  corners.forEach(([z, y, fillet = 0, edge = 0], i) => {
-    if (!fillet) return void out.push([z, y, edge]);
-    const toward = (k: number) => {
-      const [pz, py] = corners[(i + k + n) % n], d = Math.hypot(pz - z, py - y), s = Math.min(fillet, d / 2) / d;
-      return [z + (pz - z) * s, y + (py - y) * s];
-    };
-    const a = toward(-1), b = toward(1);
-    for (let k = 0; k <= steps; k++) {
-      const t = k / steps, u = 1 - t;
-      out.push([u * u * a[0] + 2 * u * t * z + t * t * b[0], u * u * a[1] + 2 * u * t * y + t * t * b[1], edge]);
-    }
-  });
-  return out.filter((p, i) => Math.hypot(p[0] - out[(i + 1) % out.length][0], p[1] - out[(i + 1) % out.length][1]) > 1e-4);
-}
 
 /** Lofts a side profile across ±half; every point rolls onto the flat sides over its own edge radius. */
 function shell(bucket: Parts, color: string, points: number[][], half: number, steps = 3) {
@@ -61,32 +41,8 @@ function tumblehome(g: T.BufferGeometry) {
   }
 }
 
-/** Flat side-profile panel between two x planes, with optional openings. */
-function slab(bucket: Parts, color: string, corners: Corner[], x0: number, x1: number, holes: Corner[][] = []) {
-  const path = (c: Corner[]) => profile(c).map(([z, y]) => new T.Vector2(z, y));
-  const shape = new T.Shape(path(corners));
-  shape.holes = holes.map(h => new T.Path(path(h)));
-  const g = new T.ExtrudeGeometry(shape, { depth: Math.abs(x1 - x0), bevelEnabled: false });
-  part(bucket, g.rotateY(-Math.PI / 2).translate(Math.max(x0, x1), 0, 0), color);
-}
-
 function rbox(bucket: Parts, color: string, x: number, y: number, z: number, w: number, h: number, d: number, r: number, rx = 0, ry = 0) {
   part(bucket, new RoundedBoxGeometry(w, h, d, 1, r), color, x, y, z, 1, 1, 1, rx, ry);
-}
-
-/** Yellow commercial number plate facing ±z; dark character bars stand in for the registration. */
-function plate(bucket: Parts, y: number, z: number, lines: number[][], dir: number) {
-  const w = .34, h = .03 + lines.length * .075, face = z + dir * .006;
-  box(bucket, "#efc232", 0, y, z, w, h, .01);
-  box(bucket, "#30509b", -dir * (w / 2 - .018), y, face, .02, h - .03, .002);
-  lines.forEach((groups, row) => {
-    let x = -(groups.reduce((a, b) => a + b) * .026 + (groups.length - 1) * .02) / 2 + .013;
-    const cy = y + (lines.length - 1) * .0375 - row * .075;
-    for (const count of groups) {
-      for (let i = 0; i < count; i++, x += .026) box(bucket, "#1b1b1b", dir * (x + .011), cy, face, .017, .046, .002);
-      x += .02;
-    }
-  });
 }
 
 /** Lathe-turned 155 R13 tyre on a dished steel disc wheel; axle along x, outer face towards +x. */

@@ -95,13 +95,14 @@ export function buildGalleryStair(parent: T.Group, floor: Floor) {
     makeFlight(left, stair.centre - centreGap, stair.firstTread, lower, 1);
     makeFlight(stair.centre + centreGap, right, stair.lastTread, middle, -1);
     const landingDepth = stair.back - wall - stair.lastTread;
-    const entryDepth = stair.firstTread - stair.entrance + .10;
+    // The entry landing meets the gallery's walkway at the shopfront line without overlapping it.
+    const entryDepth = stair.firstTread - stair.entrance;
     parts.box(stone, stair.centre, middle - .085, stair.lastTread + landingDepth / 2, right - left, .17, landingDepth);
     parts.box(stone, stair.centre, lower - .05, stair.firstTread - entryDepth / 2, right - left, .10, entryDepth);
     rail(stair.centre - centreGap, stair.firstTread, stair.lastTread + .10, lower + .08, middle);
     rail(stair.centre + centreGap, stair.lastTread + .10, stair.firstTread, middle, upper);
   } else {
-    const entryDepth = stair.firstTread - stair.entrance + .10;
+    const entryDepth = stair.firstTread - stair.entrance;
     parts.box(stone, stair.centre, upper - .023, stair.firstTread - entryDepth / 2, width - wall * 2, .046, entryDepth);
     // The returning flight arrives on the right. A guard closes the void on the left.
     for (const height of [.38, .67, .98]) {

@@ -9,6 +9,11 @@ import { Icon } from "./icons";
 import "../public/gallery.css";
 import "./project-features.css";
 
+const featuredPhotoSizes: Partial<Record<number, string>> = {
+  8: "(max-width: 40rem) 94vw, (max-width: 52rem) 46vw, 55vw",
+  10: "(max-width: 52rem) 46vw, 39vw",
+};
+
 function WalkthroughPlayer({ videoRef, onTimeUpdate }: {
   videoRef?: RefObject<HTMLVideoElement | null>;
   onTimeUpdate?: (time: number) => void;
@@ -65,7 +70,9 @@ export function ProjectGallery() {
           >
             <span className="nb-photo-frame">
               <img
-                src={renderPath(id, index !== 0)}
+                src={renderPath(id, index >= 2)}
+                srcSet={featuredPhotoSizes[id] ? `${renderPath(id, true)} 640w, ${renderPath(id)} 1672w` : undefined}
+                sizes={featuredPhotoSizes[id]}
                 loading={index < 2 ? "eager" : "lazy"}
                 fetchPriority={index === 0 ? "high" : undefined}
                 decoding="async"

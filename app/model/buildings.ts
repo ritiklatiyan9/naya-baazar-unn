@@ -4,7 +4,7 @@ import { Parts, levelHeight, prism, sheetPoint, type Booking, type Floor, type U
 import { addRetail } from "./retail";
 import { addRoofSigns } from "./roofSigns";
 import { addRoofTanks } from "./roofTanks";
-import { glassSetback } from "./retailFrontages";
+import { glassPoints } from "./retailFrontages";
 import { shellBoundaries, type Boundary } from "./wings";
 import { facadeFinish } from "./siteMaterials";
 import { buildGalleryStair } from "./galleryStair";
@@ -66,7 +66,6 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
   const graphite = matte(shades.coping, "paint");
   // The lower slab's top is the polished gallery floor; the upper slab is a weathered roof terrace.
   const tiled = upper ? matte("#d9d2c4", "plaster", "terrace", 0.16) : matte("#ece6da", "plaster", "tile");
-  const recess = upper ? glassSetback.first : glassSetback.ground;
   const low = bottom + 0.14;
   const high = deck - (upper ? 0.73 : 0.55);
   const parapet = deck + (upper ? 0.40 : 0.48);
@@ -93,7 +92,8 @@ function drawShells(group: T.Group, upper: boolean, bottom: number, deck: number
 
     let distance = 0;
     let nextPier = 0;
-    const inside = points.map((_, i) => inset(wing, i, recess));
+    // The soffit lining and the walkway end on the shopfront line, which is cut back cleanly inside sharp corners.
+    const inside = glassPoints(wing);
     const count = points.length;
     for (let i = 0; i < count; i++) {
       const j = (i + 1) % count;

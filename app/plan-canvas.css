@@ -1,14 +1,16 @@
 .pc-card {
-  --pc-ink: var(--ink, #1e382f);
-  --pc-muted: var(--muted, #596258);
-  --pc-line: var(--line, #d5d1c3);
+  --pc-ink: var(--ink, #251f1b);
+  --pc-muted: var(--muted, #685e53);
+  --pc-line: var(--line, #ded6ca);
+  --pc-surface: var(--surface, #fffdf9);
+  --pc-control: #eee7dd;
   color: var(--pc-ink);
   min-width: 0;
   overflow: hidden;
   align-self: start;
   border: 1px solid var(--pc-line);
-  border-radius: 3px;
-  background: #fffef9;
+  border-radius: 1.25rem;
+  background: var(--pc-surface);
 }
 
 .pc-card button {
@@ -21,7 +23,7 @@
 
 .pc-card button:disabled { opacity: .42; cursor: default; }
 .pc-card button:focus-visible, .pc-surface:focus-visible {
-  outline: 2px solid #16543d;
+  outline: 2px solid var(--accent, #775638);
   outline-offset: 2px;
 }
 
@@ -30,18 +32,16 @@
   align-items: center;
   justify-content: space-between;
   gap: .6rem;
-  padding: .55rem 1.05rem;
-  color: #fffdf5;
-  background: #243e34;
+  padding: .68rem 1.05rem;
+  border-bottom: 1px solid var(--pc-line);
 }
 
-.pc-toolbar { border-bottom: 1px solid #b9a372; }
 .pc-floors {
   display: flex;
   gap: .2rem;
-  padding: 2px;
-  border: 1px solid #ffffff42;
-  border-radius: 2px;
+  padding: .2rem;
+  border-radius: 2rem;
+  background: var(--pc-control);
 }
 
 .pc-floors button, .pc-expand {
@@ -49,27 +49,27 @@
   align-items: center;
   justify-content: center;
   gap: .5rem;
-  border-radius: 1px;
+  border-radius: 2rem;
   white-space: nowrap;
 }
 
 .pc-floors button {
   padding: .51rem .97rem;
-  color: #fffdf5;
   font-size: .875rem;
   line-height: 1.15;
   font-weight: 550;
 }
 
-.pc-floors button[aria-pressed="true"] { background: #f4eddb; color: #1c3329; }
-.pc-floors button:not([aria-pressed="true"]):hover { background: #385447; }
+.pc-floors button[aria-pressed="true"] { background: var(--pc-ink); color: var(--pc-surface); }
+.pc-floors button:not([aria-pressed="true"]):hover { background: var(--pc-surface); }
 .pc-card .pc-expand {
+  border: 1px solid var(--pc-line);
   font-size: .875rem;
   font-weight: 550;
-  min-height: 36px;
-  padding: .35rem .5rem;
+  min-height: 38px;
+  padding: .35rem .8rem;
 }
-.pc-card .pc-expand:hover { background: #385447; }
+.pc-card .pc-expand:hover { background: var(--pc-control); }
 
 .pc-stage {
   position: relative;
@@ -78,18 +78,18 @@
   aspect-ratio: 1.9;
   min-height: 210px;
   overflow: hidden;
-  background-color: #f9f6ec;
+  background-color: #f8f4ec;
   background-image:
-    linear-gradient(rgba(106,113,88,.11) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(106,113,88,.11) 1px,transparent 1px),
-    linear-gradient(rgba(106,113,88,.035) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(106,113,88,.035) 1px,transparent 1px);
+    linear-gradient(rgb(113 92 71 / 11%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(113 92 71 / 11%) 1px, transparent 1px),
+    linear-gradient(rgb(113 92 71 / 4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(113 92 71 / 4%) 1px, transparent 1px);
   background-size: 100px 100px,100px 100px,20px 20px,20px 20px;
   background-position: 50% 50%;
 }
 
 .pc-cross { position: absolute; z-index: 2; width: 11px; height: 11px; pointer-events: none; }
-.pc-cross::before, .pc-cross::after { content: ''; position: absolute; background: #998254; }
+.pc-cross::before, .pc-cross::after { content: ''; position: absolute; background: #a89279; }
 .pc-cross::before { width: 100%; height: 1px; top: 5px; left: 0; }
 .pc-cross::after { width: 1px; height: 100%; top: 0; left: 5px; }
 .pc-cross-nw { left: 12px; top: 12px; }
@@ -104,15 +104,15 @@
   left: clamp(22px, 2.4vw, 38px);
   display: grid;
   gap: .24rem;
-  color: #4e6756;
+  color: var(--pc-muted);
   pointer-events: none;
   font: 500 .75rem/1.3 var(--atlas-sans, system-ui, sans-serif);
   text-transform: uppercase;
   letter-spacing: .115em;
 }
 
-.pc-sheet-id strong { font-weight: 650; color: #334c3f; }
-.pc-sheet-id span { letter-spacing: .06em; color: #655e4f; }
+.pc-sheet-id strong { font-weight: 650; color: var(--pc-ink); }
+.pc-sheet-id span { letter-spacing: .06em; }
 .pc-stage-zoomed .pc-sheet-id { display: none; }
 
 .pc-surface {
@@ -136,10 +136,10 @@
   right: 30px;
   display: flex;
   align-items: stretch;
-  border: 1px solid #c6c4b5;
-  border-radius: 2px;
-  background: #fffdf6;
-  box-shadow: 0 2px 5px #2036190d;
+  border: 1px solid var(--pc-line);
+  border-radius: .7rem;
+  background: var(--pc-surface);
+  box-shadow: 0 2px 8px #3b2b2112;
 }
 
 .pc-tools button {
@@ -148,8 +148,9 @@
   width: 32px;
   height: 30px;
 }
-.pc-tools button:hover:enabled { background: #f0eadb; }
-.pc-tools .pc-fit { border-left: 1px solid #d5d1c3; }
+.pc-tools button:first-child { border-radius: .65rem 0 0 .65rem; }
+.pc-tools button:hover:enabled { background: var(--pc-control); }
+.pc-tools .pc-fit { border-left: 1px solid var(--pc-line); border-radius: 0 .65rem .65rem 0; }
 .pc-tools button svg { width: 15px; height: 15px; }
 
 .pc-hint {
@@ -199,12 +200,12 @@
   margin: auto;
   padding: 0;
   border: 0;
-  border-radius: 3px;
-  background: #fffef9;
+  border-radius: 1.25rem;
+  background: var(--surface, #fffdf9);
   overflow: auto;
-  box-shadow: 0 18px 85px #14261f50;
+  box-shadow: 0 18px 85px #281f1a50;
 }
-.pc-dialog::backdrop { background: #13271fd1; }
+.pc-dialog::backdrop { background: #231b16c2; }
 .pc-dialog .pc-stage { aspect-ratio: auto; height: min(74dvh, 850px); min-height: 175px; }
 
 @media (max-width: 800px) {
@@ -245,10 +246,8 @@
   .pc-dialog .pc-stage { height: 60dvh; }
 }
 
-.pc-picked { display: flex; align-items: center; justify-content: center; gap: .35rem .8rem; flex-wrap: wrap; padding: .65rem .8rem; background: #f3efdf; border-top: 1px solid var(--pc-line); color: var(--pc-ink); font-size: .85rem; }
+.pc-picked { display: flex; align-items: center; justify-content: center; gap: .35rem .8rem; flex-wrap: wrap; padding: .65rem .8rem; background: var(--pc-control); border-top: 1px solid var(--pc-line); color: var(--pc-ink); font-size: .85rem; }
 .pc-picked-status { text-transform: capitalize; }
-
-.pc-toolbar button:focus-visible { outline-color: #e9cb86; }
 
 @media (prefers-reduced-motion: no-preference) {
   .pc-card button { transition: background-color .18s ease, color .18s ease; }

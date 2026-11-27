@@ -165,13 +165,18 @@
 .three-tools button + button {
   border-left: 1px solid #d9d4c3;
 }
-.three-plan .three-night {
+.three-corner {
   position: absolute;
   z-index: 1;
   left: 13px;
   bottom: 13px;
+  display: flex;
+  gap: 0.5rem;
+}
+.three-plan .three-night, .three-plan .three-sound {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.45rem;
   min-height: 36px;
   padding: 0.35rem 0.8rem 0.35rem 0.65rem;
@@ -183,14 +188,16 @@
   font-size: 0.875rem;
   font-weight: 550;
 }
-.three-plan .three-night:hover { background: #eee8da; }
+.three-plan .three-sound { min-width: 36px; padding: 0.35rem; }
+.three-plan .three-night:hover, .three-plan .three-sound:hover { background: #eee8da; }
 .three-plan .three-night[aria-pressed="true"] {
   background: #111b2eee;
   border-color: #3b4a68;
   color: #ffe3a1;
 }
 .three-plan .three-night[aria-pressed="true"]:hover { background: #1c2940; }
-.three-plan .three-night:focus-visible { outline: 2px solid #d6a546; outline-offset: 2px; }
+.three-plan .three-sound[aria-pressed="false"] { color: #8a8676; }
+.three-plan .three-night:focus-visible, .three-plan .three-sound:focus-visible { outline: 2px solid #d6a546; outline-offset: 2px; }
 .three-shop-search {
   position: absolute;
   z-index: 1;
@@ -493,7 +500,9 @@
   .three-plan:fullscreen .three-stage { min-height: min(16rem, 50dvh); }
   .three-tools { right: .75rem; bottom: .75rem; }
   .three-tools button { width: 44px; height: 44px; }
-  .three-plan .three-night { left: .75rem; bottom: .75rem; min-height: 44px; }
+  .three-corner { left: .75rem; bottom: .75rem; }
+  .three-plan .three-night { min-height: 44px; }
+  .three-plan .three-sound { min-height: 44px; min-width: 44px; }
   .three-shop-search { left: .75rem; top: .75rem; max-width: calc(100% - 1.5rem); }
   /* 16px keeps iOS from zooming the page when the field takes focus. */
   .three-shop-field input { width: 10rem; height: 44px; font-size: 16px; }

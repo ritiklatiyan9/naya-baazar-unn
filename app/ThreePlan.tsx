@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import type { CameraView, ModelState, WalkthroughPlayback, createViewer } from "./model/viewer";
 import type { Booking, Floor } from "./model/geometry";
 import { walkthroughs } from "./model/walkthrough";
+import { ambientTrack, createAmbience } from "./ambientSound";
 import { Icon } from "./icons";
 import "./ThreePlan.css";
 
@@ -35,7 +36,9 @@ function timestamp(seconds: number) {
   const whole = Math.floor(seconds);
   return Math.floor(whole / 60) + ":" + String(whole % 60).padStart(2, "0");
 }
-function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" | "close" | "directory" | "expand" | "camera" | "settings" | "chevron" | "moon" }) {
+// Remembers a visitor who switched the background sound off.
+const soundKey = "naya-baazar-3d-sound";
+function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" | "close" | "directory" | "expand" | "camera" | "settings" | "chevron" | "moon" | "sound" | "mute" }) {
   const paths = {
     minus: "M5 12h14",
     plus: "M5 12h14M12 5v14",
@@ -49,6 +52,8 @@ function Glyph({ name }: { name: "minus" | "plus" | "reset" | "pause" | "play" |
     settings: "M3 7h4m6 0h8M3 17h9m6 0h3M13 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm5 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
     chevron: "m7 10 5 5 5-5",
     moon: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
+    sound: "M4 9.5h3.5L12 6v12l-4.5-3.5H4z M15.5 9a4.2 4.2 0 0 1 0 6 M18.2 6.5a7.8 7.8 0 0 1 0 11",
+    mute: "M4 9.5h3.5L12 6v12l-4.5-3.5H4z M16 10l4.5 4.5 M20.5 10 16 14.5",
   };
   return (
     <svg
@@ -87,6 +92,28 @@ export default function ThreePlan(props: Props) {
   const [shopNote, setShopNote] = useState<{ text: string; error?: boolean } | null>(null);
   const playControl = useRef<HTMLButtonElement>(null);
   const launchButtons = useRef<Partial<Record<Floor, HTMLButtonElement | null>>>({});
+  // The control only renders once the track loads in the browser, so reading storage here can't mismatch the server HTML.
+  const [sound, setSound] = useState(() => {
+    try { return localStorage.getItem(soundKey) !== "off"; } catch { return true; }
+  });
+  const [soundReady, setSoundReady] = useState(false);
+  const ambience = useRef<ReturnType<typeof createAmbience> | null>(null);
+  useEffect(() => {
+    const player = createAmbience(ambientTrack, panel.current!, () => setSoundReady(true));
+    ambience.current = player;
+    return () => {
+      player.dispose();
+      ambience.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    ambience.current?.setEnabled(sound && phase !== "error");
+  }, [sound, phase]);
+  function toggleSound() {
+    const next = !sound;
+    setSound(next);
+    try { localStorage.setItem(soundKey, next ? "on" : "off"); } catch { /* storage unavailable */ }
+  }
   const inTour = tour !== null;
   useEffect(() => {
     if (inTour) playControl.current?.focus({ preventScroll: true });
@@ -324,12 +351,23 @@ export default function ThreePlan(props: Props) {
               </button>
             </div>
         </>}
-        {phase === "ready" && (
-          <button type="button" className="three-night" aria-pressed={night}
-            title={night ? "Return to the day view" : "See the market lit at night"}
-            onClick={() => setNight(on => !on)}>
-            <Glyph name="moon" />Night view
-          </button>
+        {(phase === "ready" || soundReady) && (
+          <div className="three-corner">
+            {phase === "ready" && (
+              <button type="button" className="three-night" aria-pressed={night}
+                title={night ? "Return to the day view" : "See the market lit at night"}
+                onClick={() => setNight(on => !on)}>
+                <Glyph name="moon" />Night view
+              </button>
+            )}
+            {soundReady && (
+              <button type="button" className="three-sound" aria-pressed={sound}
+                aria-label="Background sound" title={sound ? "Turn background sound off" : "Turn background sound on"}
+                onClick={toggleSound}>
+                <Glyph name={sound ? "sound" : "mute"} />
+              </button>
+            )}
+          </div>
         )}
       </div>
         {phase === "ready" && tour && (

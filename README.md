@@ -1,6 +1,6 @@
 # Naya Baazar
 
-The project atlas opens on the interactive ground-floor plan for Naya Baazar in Unn, Shamli. It includes both floors, shop dimensions and availability for all 216 shops in the supplied drawing, a 3D layout, 16 architectural renders and a video walkthrough.
+The homepage introduces Naya Baazar in Unn, Shamli. **Map Layout** in the header opens the interactive floor plans, with dimensions and availability for all 216 shops in the supplied drawing. The site also includes a 3D model, 16 architectural renders and a video walkthrough.
 
 ## Manage shop bookings
 
